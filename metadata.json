@@ -1,0 +1,6 @@
+{
+  "name": "Tecnopatch Cotizador (Syscom API)",
+  "description": "Una aplicación web de cotizaciones conectada directamente a la API de Syscom para buscar y listar productos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,133 @@
+import express from 'express';
+import path from 'path';
+
+// Credenciales de Syscom (Fallback para desarrollo)
+// NOTA DE SEGURIDAD: Para producción y GitHub, elimina estas llaves de aquí y
+// agrégalas en el panel de "Settings -> Environment Variables" del proyecto.
+const SYSCOM_CLIENT_ID = process.env.SYSCOM_CLIENT_ID;
+const SYSCOM_CLIENT_SECRET = process.env.SYSCOM_CLIENT_SECRET;
+
+let syscomToken: string | null = null;
+let syscomTokenExpiresAt = 0;
+
+async function getSyscomToken() {
+  if (!SYSCOM_CLIENT_ID || !SYSCOM_CLIENT_SECRET) {
+    throw new Error('Missing Syscom credentials. Set SYSCOM_CLIENT_ID and SYSCOM_CLIENT_SECRET.');
+  }
+
+  if (syscomToken && Date.now() < syscomTokenExpiresAt) {
+    return syscomToken;
+  }
+  const params = new URLSearchParams({
+    client_id: SYSCOM_CLIENT_ID,
+    client_secret: SYSCOM_CLIENT_SECRET,
+    grant_type: 'client_credentials'
+  });
+  
+  const response = await fetch('https://developers.syscom.mx/oauth/token', {
+    method: 'POST',
+    body: params
+  });
+  const data = await response.json() as any;
+  if (data.access_token) {
+    syscomToken = data.access_token;
+    // expires_in is in seconds, minus 60 seconds buffer
+    syscomTokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
+    return syscomToken;
+  }
+  throw new Error('Failed to get Syscom Token');
+}
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+// API Routes
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/api/syscom/search', async (req, res) => {
+  try {
+    const query = req.query.q as string || '';
+    const page = req.query.page || '1';
+    const token = await getSyscomToken();
+    
+    const searchParams = new URLSearchParams();
+    if (query) searchParams.append('busqueda', query);
+    searchParams.append('pagina', page.toString());
+    
+    const response = await fetch(`https://developers.syscom.mx/api/v1/productos?${searchParams.toString()}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/syscom/categorias', async (req, res) => {
+   try {
+     const token = await getSyscomToken();
+     const response = await fetch(`https://developers.syscom.mx/api/v1/categorias`, {
+       headers: {
+         'Authorization': `Bearer ${token}`
+       }
+     });
+     const data = await response.json();
+     res.json(data);
+   } catch (error: any) {
+     console.error(error);
+     res.status(500).json({ error: error.message });
+   }
+});
+
+app.get('/api/syscom/exchange', async (req, res) => {
+  try {
+    const token = await getSyscomToken();
+    const response = await fetch(`https://developers.syscom.mx/api/v1/tipocambio`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Vite middleware for local development
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  import('vite').then(({ createServer }) => {
+    createServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    }).then((vite) => {
+      app.use(vite.middlewares);
+    });
+  });
+} else if (!process.env.VERCEL) {
+  // Only serve static files via Express if we are NOT on Vercel
+  // Vercel handles static assets natively based on package.json's build script
+  const distPath = path.join(process.cwd(), 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+// Export the app directly
+export default app;
