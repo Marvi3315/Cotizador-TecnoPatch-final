@@ -1197,19 +1197,18 @@ export default function App() {
               {/* Quote Sidebar / Right Pane */}
               <section className={`bg-white flex flex-col shrink-0 border-l border-slate-200 transition-all duration-300 ease-out overflow-hidden shadow-2xl
             ${showMobileCart
-                  ? 'fixed right-0 top-0 bottom-0 z-50 h-[100dvh] w-full sm:w-[420px] xl:w-[460px] opacity-100 flex'
+                  ? 'fixed right-0 top-0 bottom-0 z-50 h-[100dvh] w-[min(100vw,390px)] lg:w-[400px] opacity-100 flex'
                   : 'hidden'
                 }`}>
-                <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shadow-sm z-20 shrink-0 bg-white">
-                  <h3 className="font-bold text-[14px] md:text-[16px] flex items-center gap-2">
+                <div className="p-3 border-b border-slate-100 flex items-center justify-between shadow-sm z-20 shrink-0 bg-white">
+                  <h3 className="font-bold text-[13px] md:text-[14px] flex items-center gap-2">
                     <ShoppingCart size={18} className="text-blue-600" />
                     Detalle de Cotizacion
                   </h3>
-                  <div className="hidden sm:flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                  <div className="hidden xl:flex flex-wrap items-center gap-1 text-[9px] font-bold text-slate-500">
                     <span className="rounded-full bg-slate-100 px-2 py-0.5">{quoteItems.length} partidas</span>
                     <span className="rounded-full bg-blue-50 text-blue-700 px-2 py-0.5">{syscomItemCount} Syscom</span>
                     <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5">{manualItemCount} manuales</span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5">{quoteUnitCount} uds</span>
                   </div>
                   <div className="flex gap-2">
                     {!isConfirmingEmpty ? (
@@ -1508,8 +1507,8 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="p-3 lg:p-5 bg-slate-900 text-white mt-auto border-t border-slate-800 shrink-0 shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.3)]">
-                  <div className="mb-2 lg:mb-4 pb-2 lg:pb-4 border-b border-white/10 flex items-center justify-between">
+                <div className="p-3 bg-slate-900 text-white mt-auto border-t border-slate-800 shrink-0 shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.3)]">
+                  <div className="mb-2 pb-2 border-b border-white/10 flex items-center justify-between">
                     <span className="text-xs lg:text-sm font-semibold">Incluir IVA (16%)</span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" checked={includeIva} onChange={(e) => setIncludeIva(e.target.checked)} />
@@ -1517,35 +1516,7 @@ export default function App() {
                     </label>
                   </div>
 
-                  <div className="hidden lg:flex flex-col gap-3 mb-4 border-b border-white/5 pb-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Margen Global</span>
-                      <div className="flex gap-1">
-                        {[20, 30, 40, 50].map(m => (
-                          <button
-                            key={m}
-                            onClick={() => { setMarginPercent(m); applyGlobalMargin(m); }}
-                            className={`text-[9px] font-bold px-2 py-0.5 rounded border transition-all ${marginPercent === m ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'}`}
-                          >
-                            {m}%
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={marginPercent}
-                        onChange={(e) => setMarginPercent(parseInt(e.target.value) || 0)}
-                        className="h-8 w-16 text-center font-bold text-blue-400 bg-slate-800 border-slate-700"
-                      />
-                      <Button onClick={() => applyGlobalMargin()} variant="outline" className="flex-1 h-8 text-[11px] font-bold border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white">
-                        Actualizar Todos
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="hidden lg:block space-y-2 text-[13px] opacity-80 mb-3">
+                  <div className="hidden 2xl:block space-y-1.5 text-[11px] opacity-80 mb-2">
                     <div className="flex justify-between">
                       <span>Subtotal ({currency})</span>
                       <span>{subtotal.toLocaleString('es-MX', { style: 'currency', currency: currency })}</span>
@@ -1570,44 +1541,44 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-end text-[18px] lg:text-[20px] font-bold pt-2 lg:pt-3 border-t border-white/10 mt-2 lg:mt-3">
+                  <div className="flex justify-between items-end text-[16px] font-bold pt-2 border-t border-white/10 mt-2">
                     <div>
-                      <span className="block text-[10px] lg:text-[12px] text-slate-400 uppercase tracking-widest">Total</span>
+                      <span className="block text-[9px] text-slate-400 uppercase tracking-widest">Total</span>
                       <span>TOTAL {currency}</span>
                     </div>
                     <span className="text-blue-400">{total.toLocaleString('es-MX', { style: 'currency', currency: currency })}</span>
                   </div>
 
-                  <div className="flex gap-2 lg:gap-3 mt-3 lg:mt-6">
+                  <div className="flex gap-2 mt-3">
                     <Button
-                      className="flex-1 p-3 lg:p-4 bg-blue-600 hover:bg-blue-700 text-white h-auto rounded-xl font-black uppercase tracking-widest flex gap-2 items-center justify-center text-[11px] lg:text-[12px] shadow-xl shadow-blue-900/30 active:scale-95 transition-all"
+                      className="flex-1 p-2.5 bg-blue-600 hover:bg-blue-700 text-white h-auto rounded-lg font-black uppercase tracking-widest flex gap-2 items-center justify-center text-[10px] shadow-xl shadow-blue-900/30 active:scale-95 transition-all"
                       disabled={quoteItems.length === 0}
                       onClick={saveQuoteToHistory}
                     >
-                      <Save size={18} /> Guardar
+                      <Save size={15} /> Guardar
                     </Button>
                     <Button
-                      className="flex-1 p-3 lg:p-4 bg-white hover:bg-slate-100 text-slate-900 h-auto rounded-xl font-black uppercase tracking-widest flex gap-2 items-center justify-center text-[11px] lg:text-[12px] shadow-lg shadow-black/5 border border-slate-200 active:scale-95 transition-all"
+                      className="flex-1 p-2.5 bg-white hover:bg-slate-100 text-slate-900 h-auto rounded-lg font-black uppercase tracking-widest flex gap-2 items-center justify-center text-[10px] shadow-lg shadow-black/5 border border-slate-200 active:scale-95 transition-all"
                       disabled={quoteItems.length === 0}
                       onClick={() => {
                         saveQuoteToHistory();
                         setTimeout(() => window.print(), 300);
                       }}
                     >
-                      <Printer size={18} /> Imprimir
+                      <Printer size={15} /> Imprimir
                     </Button>
                   </div>
 
                   <div className="flex gap-2 mt-2">
                     <Button
-                      className="flex-1 p-2.5 lg:p-3 bg-slate-800 hover:bg-slate-700 text-white h-auto rounded-lg font-bold flex gap-2 items-center justify-center text-[11px] lg:text-xs"
+                      className="flex-1 p-2 bg-slate-800 hover:bg-slate-700 text-white h-auto rounded-lg font-bold flex gap-2 items-center justify-center text-[10px]"
                       disabled={quoteItems.length === 0}
                       onClick={() => setShowPreview(true)}
                     >
-                      <FileText size={16} /> Vista Previa
+                      <FileText size={14} /> Vista Previa
                     </Button>
                     <Button
-                      className="flex-1 p-2.5 lg:p-3 bg-emerald-600 hover:bg-emerald-500 text-white h-auto rounded-lg font-bold flex gap-2 items-center justify-center text-[11px] lg:text-xs"
+                      className="flex-1 p-2 bg-emerald-600 hover:bg-emerald-500 text-white h-auto rounded-lg font-bold flex gap-2 items-center justify-center text-[10px]"
                       disabled={quoteItems.length === 0}
                       onClick={() => {
                         const itemsText = quoteItems.map(item => `• ${item.quantity}x ${item.product.modelo}`).join('%0A');
