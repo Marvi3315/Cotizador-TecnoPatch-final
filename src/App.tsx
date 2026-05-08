@@ -1841,12 +1841,12 @@ export default function App() {
 
           {/* Preview Dialog */}
           <Dialog open={showPreview} onOpenChange={setShowPreview}>
-            <DialogContent className="max-w-5xl w-full sm:w-[95vw] h-[95vh] flex flex-col p-0 overflow-hidden bg-slate-100 rounded-none sm:rounded-xl">
+            <DialogContent className="print:hidden max-w-[1280px] w-[96vw] h-[96vh] flex flex-col p-0 overflow-hidden bg-slate-100 rounded-none sm:rounded-xl">
               <DialogHeader className="p-4 border-b bg-white shrink-0 flex flex-row items-center justify-between">
                 <DialogTitle>Vista Previa del Documento</DialogTitle>
               </DialogHeader>
               <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 bg-slate-400/20 text-left relative">
-                <div className="w-full max-w-[21cm] mx-auto h-fit bg-white shadow-2xl">
+                <div className="w-full max-w-[21cm] mx-auto h-fit bg-white shadow-2xl preview-document">
                   <QuoteDocument
                     quoteItems={quoteItems}
                     clientName={clientName}
@@ -1866,7 +1866,7 @@ export default function App() {
               </div>
               <div className="p-4 bg-white border-t flex flex-col sm:flex-row justify-end gap-3 shrink-0">
                 <Button variant="outline" onClick={() => setShowPreview(false)} className="w-full sm:w-auto order-2 sm:order-1">Cerrar</Button>
-                <Button onClick={() => { setShowPreview(false); setTimeout(() => window.print(), 100); }} className="w-full sm:w-auto order-1 sm:order-2 bg-blue-600 hover:bg-blue-700">
+                <Button onClick={() => { setShowPreview(false); setTimeout(() => window.print(), 350); }} className="w-full sm:w-auto order-1 sm:order-2 bg-blue-600 hover:bg-blue-700">
                   <Printer className="mr-2" size={16} /> Imprimir PDF
                 </Button>
               </div>

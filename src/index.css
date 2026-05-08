@@ -168,6 +168,12 @@
     display: none !important;
   }
 
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="dialog-portal"] {
+    display: none !important;
+  }
+
   .print-section {
     page-break-inside: auto;
   }
@@ -201,4 +207,3 @@
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
 }
-

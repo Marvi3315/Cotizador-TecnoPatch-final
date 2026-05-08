@@ -35,15 +35,15 @@ export function QuoteDocument({
 
   return (
     <div className="w-full text-left bg-white font-sans flex flex-col" style={{ fontFamily: 'Inter, sans-serif' }}>
-      <div className="bg-[#0f172a] text-white py-6 px-8 border-b-4 border-blue-600">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-6">
-            <div className="w-32 h-20 bg-white flex items-center justify-center rounded-lg p-1.5 shadow-sm overflow-hidden shrink-0">
+      <div className="bg-[#0f172a] text-white py-5 px-5 sm:py-6 sm:px-8 border-b-4 border-blue-600">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 min-w-0">
+            <div className="w-28 h-[4.5rem] sm:w-32 sm:h-20 bg-white flex items-center justify-center rounded-lg p-1.5 shadow-sm overflow-hidden shrink-0">
               <img src="/logo.png" alt="TecnoPatch" className="w-full h-full object-contain" />
             </div>
 
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight mb-1">TecnoPatch</h1>
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-1 break-words">TecnoPatch</h1>
               <p className="text-[#06b6d4] text-[9px] uppercase font-bold tracking-widest mb-1.5">TELECOMUNICACIONES - GUADALAJARA, JAL.</p>
               <div className="text-[10px] text-slate-300 space-y-0.5">
                 <p>33 2849-6052 | 322 518-7656 | serviciotecnopatch@gmail.com</p>
@@ -52,7 +52,7 @@ export function QuoteDocument({
             </div>
           </div>
 
-          <div className="text-right">
+          <div className="text-left md:text-right shrink-0">
             <p className="text-[#06b6d4] font-bold text-base mb-1">{quoteNumber}</p>
             <p className="text-slate-300 text-xs">{new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
             <p className="text-slate-400 text-[10px] mt-1">Vigencia: 15 dias naturales</p>
@@ -60,10 +60,10 @@ export function QuoteDocument({
         </div>
       </div>
 
-      <div className="p-8 flex-col flex overflow-visible">
+      <div className="p-5 sm:p-8 flex-col flex overflow-visible">
         <div className="bg-[#0f172a] rounded-xl p-5 mb-8 break-inside-avoid">
           <h4 className="text-[#06b6d4] text-xs font-bold uppercase tracking-widest mb-4">Datos del Cliente</h4>
-          <div className="grid grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-8">
             <div>
               <p className="text-blue-500 text-[10px] font-bold uppercase tracking-wider mb-2">Empresa / Cliente</p>
               <p className="text-white font-bold text-sm">{clientName || 'N/A'}</p>
@@ -96,18 +96,18 @@ export function QuoteDocument({
         <div className="w-full">
           <table className="w-full text-left border-collapse mb-10 overflow-visible">
             <thead>
-              <tr className="bg-[#1d4ed8] text-white text-xs uppercase tracking-wider">
-                <th className="py-3 px-4 font-bold rounded-tl-md w-12 text-center">#</th>
+              <tr className="bg-[#1d4ed8] text-white text-[10px] sm:text-xs uppercase tracking-wider">
+                <th className="py-3 px-2 sm:px-4 font-bold rounded-tl-md w-10 sm:w-12 text-center">#</th>
                 <th className="py-3 px-2 font-bold">Descripcion / Categoria</th>
-                <th className="py-3 px-4 text-right font-bold w-32">P.Unit</th>
-                <th className="py-3 px-4 text-center font-bold w-20">Cant</th>
-                <th className="py-3 px-4 text-right font-bold rounded-tr-md w-36">Importe</th>
+                <th className="py-3 px-2 sm:px-4 text-right font-bold w-24 sm:w-32">P.Unit</th>
+                <th className="py-3 px-2 sm:px-4 text-center font-bold w-14 sm:w-20">Cant</th>
+                <th className="py-3 px-2 sm:px-4 text-right font-bold rounded-tr-md w-28 sm:w-36">Importe</th>
               </tr>
             </thead>
             <tbody>
               {quoteItems.map((item, idx) => (
                 <tr key={`${item.product.producto_id}-${idx}`} className="border-b border-slate-200 text-sm">
-                  <td className="py-3 px-4 align-top text-center font-bold text-blue-600">{idx + 1}</td>
+                  <td className="py-3 px-2 sm:px-4 align-top text-center font-bold text-blue-600">{idx + 1}</td>
                   <td className="py-3 px-2 align-top">
                     <p className="font-bold text-slate-800 leading-snug break-words pr-4">{item.product.titulo}</p>
                     <p className="text-[10px] text-slate-500 mt-2 capitalize font-medium">
@@ -117,13 +117,13 @@ export function QuoteDocument({
                       {item.product.isManual && item.product.unit && ` - Unidad: ${item.product.unit}`}
                     </p>
                   </td>
-                  <td className="py-3 px-4 align-top text-right text-slate-700 whitespace-nowrap">
+                  <td className="py-3 px-2 sm:px-4 align-top text-right text-slate-700 whitespace-nowrap">
                     {symbol}{((currency === 'USD' ? item.unitPriceMxn / exchangeRate : item.unitPriceMxn)).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td className="py-3 px-4 align-top text-center font-bold text-blue-600">
+                  <td className="py-3 px-2 sm:px-4 align-top text-center font-bold text-blue-600">
                     {item.quantity}{item.product.isManual && item.product.unit ? ` ${item.product.unit}` : ''}
                   </td>
-                  <td className="py-3 px-4 align-top text-right font-bold text-emerald-600 whitespace-nowrap">
+                  <td className="py-3 px-2 sm:px-4 align-top text-right font-bold text-emerald-600 whitespace-nowrap">
                     {symbol}{((currency === 'USD' ? (item.unitPriceMxn * item.quantity) / exchangeRate : (item.unitPriceMxn * item.quantity))).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                 </tr>
@@ -133,8 +133,8 @@ export function QuoteDocument({
         </div>
 
         <div className="break-inside-avoid mt-4">
-          <div className="flex items-start justify-between pt-8 border-t border-slate-100">
-            <div className="w-7/12 pr-6">
+          <div className="flex flex-col md:flex-row items-start justify-between gap-5 pt-8 border-t border-slate-100">
+            <div className="w-full md:w-7/12 md:pr-6">
               <div className="bg-[#0f172a] rounded-xl p-5 text-slate-300">
                 <h4 className="text-[#06b6d4] text-[11px] font-bold uppercase tracking-widest mb-3">Notas y Condiciones</h4>
                 <ul className="text-[10px] space-y-1.5 leading-relaxed">
@@ -148,7 +148,7 @@ export function QuoteDocument({
               </div>
             </div>
 
-            <div className="w-5/12 ml-auto">
+            <div className="w-full md:w-5/12 md:ml-auto">
               <div className="bg-[#0f172a] border-4 border-[#1d4ed8] rounded-md text-white text-sm">
                 <div className="flex justify-between py-3 px-4 border-b border-white/10">
                   <span className="text-slate-300">Subtotal:</span>
