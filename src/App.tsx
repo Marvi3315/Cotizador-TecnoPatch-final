@@ -967,7 +967,7 @@ export default function App() {
                       <div className="max-w-2xl w-full text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
                         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-600 text-[10px] font-bold uppercase tracking-widest mb-6">
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></div>
-                          Plataforma de Cotizacion Inteligente
+                          Plataforma Profesional de Cotizacion
                         </div>
                         <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4 tracking-tighter leading-tight">
                           Crea cotizaciones <span className="text-blue-600">profesionales</span> en segundos.
@@ -1845,8 +1845,8 @@ export default function App() {
               <DialogHeader className="p-4 border-b bg-white shrink-0 flex flex-row items-center justify-between">
                 <DialogTitle>Vista Previa del Documento</DialogTitle>
               </DialogHeader>
-              <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 bg-slate-400/20 text-left relative">
-                <div className="w-full max-w-[21cm] mx-auto h-fit bg-white shadow-2xl preview-document">
+              <div className="flex-1 overflow-auto p-3 md:p-6 bg-slate-400/20 text-left relative">
+                <div className="mx-auto h-fit bg-white shadow-2xl preview-document">
                   <QuoteDocument
                     quoteItems={quoteItems}
                     clientName={clientName}

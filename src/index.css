@@ -150,6 +150,29 @@
     }
 }
 
+.preview-document {
+  width: 21cm;
+  zoom: 1;
+}
+
+@media screen and (max-width: 1180px) {
+  .preview-document {
+    zoom: 0.82;
+  }
+}
+
+@media screen and (max-width: 900px) {
+  .preview-document {
+    zoom: 0.68;
+  }
+}
+
+@media screen and (max-width: 720px) {
+  .preview-document {
+    zoom: 0.58;
+  }
+}
+
 @media print {
   @page {
     margin: 0;
@@ -181,6 +204,20 @@
   .break-inside-avoid {
     page-break-inside: avoid;
     break-inside: avoid;
+  }
+
+  .quote-document {
+    width: 21cm !important;
+  }
+
+  .quote-row,
+  .quote-footer {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .quote-table thead {
+    display: table-header-group;
   }
 }
 
