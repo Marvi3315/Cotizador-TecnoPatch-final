@@ -786,7 +786,7 @@ export default function App() {
       <History size={16} /> <span className="hidden xl:inline">Historial</span>
     </Button>
 
-    <Button variant="outline" size="sm" className="hidden md:flex 2xl:hidden gap-2 h-9 p-2 px-3 border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg shrink-0 relative" onClick={() => setShowMobileCart(true)}>
+    <Button variant="outline" size="sm" className="hidden md:flex 4xl:hidden gap-2 h-9 p-2 px-3 border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg shrink-0 relative" onClick={() => setShowMobileCart(true)}>
       <ShoppingCart size={16} />
       <span className="hidden lg:inline">Cotizacion</span>
       {quoteItems.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-[8px] text-white min-w-4 h-4 px-1 rounded-full flex items-center justify-center">{quoteItems.length}</span>}
@@ -884,7 +884,7 @@ export default function App() {
             </Dialog>
 
             {activeModule === 'cotizador' ? (
-            <main className="flex-1 max-w-[2000px] w-full mx-auto flex flex-col 2xl:flex-row h-[100dvh] md:h-[calc(100dvh-110px)] overflow-hidden">
+            <main className="flex-1 max-w-[2400px] w-full mx-auto flex flex-col 4xl:flex-row h-[100dvh] md:h-[calc(100dvh-110px)] overflow-hidden">
 
               {/* Products Sidebar / Left Pane */}
               <section ref={leftSectionRef} className="flex-1 flex flex-col gap-4 overflow-y-auto p-3 sm:p-4 md:p-6 bg-slate-50 relative custom-scrollbar">
@@ -1195,10 +1195,10 @@ export default function App() {
               </section>
 
               {/* Quote Sidebar / Right Pane */}
-              <section className={`bg-white flex flex-col shrink-0 border-l border-slate-200 transition-all duration-300 ease-out overflow-hidden shadow-2xl 2xl:shadow-none
+              <section className={`bg-white flex flex-col shrink-0 border-l border-slate-200 transition-all duration-300 ease-out overflow-hidden shadow-2xl 4xl:shadow-none
             ${showMobileCart
-                  ? 'fixed right-0 top-0 bottom-0 z-50 h-[100dvh] w-full sm:w-[460px] xl:w-[520px] opacity-100 flex'
-                  : 'hidden 2xl:flex 2xl:static 2xl:w-[500px] 3xl:w-[540px] 2xl:h-full'
+                  ? 'fixed right-0 top-0 bottom-0 z-50 h-[100dvh] w-full sm:w-[420px] xl:w-[460px] opacity-100 flex'
+                  : 'hidden 4xl:flex 4xl:static 4xl:w-[420px] 5xl:w-[460px] 4xl:h-full'
                 }`}>
                 <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shadow-sm z-20 shrink-0 bg-white">
                   <h3 className="font-bold text-[14px] md:text-[16px] flex items-center gap-2">
@@ -1239,7 +1239,7 @@ export default function App() {
                         </button>
                       </div>
                     )}
-                    <button className="2xl:hidden text-slate-500 hover:text-slate-800" onClick={() => setShowMobileCart(false)}>
+                    <button className="4xl:hidden text-slate-500 hover:text-slate-800" onClick={() => setShowMobileCart(false)}>
                       <X size={20} />
                     </button>
                   </div>
