@@ -74,7 +74,7 @@ export default function App() {
 
   // Pricing Strategy
   const [marginPercent, setMarginPercent] = useState(30);
-  const [showModelsInPdf, setShowModelsInPdf] = useState(true);
+  const [showModelsInPdf, setShowModelsInPdf] = useState(false);
   const [isInitialState, setIsInitialState] = useState(true);
 
   // Filter & UI State
@@ -143,7 +143,7 @@ export default function App() {
       setMarginPercent(data.marginPercent || 30);
       setIncludeIva(data.includeIva !== undefined ? data.includeIva : true);
       setCurrency(data.currency || 'MXN');
-      setShowModelsInPdf(data.showModelsInPdf !== undefined ? data.showModelsInPdf : true);
+      setShowModelsInPdf(false);
       setQuoteStatus(data.quoteStatus || 'Borrador');
       setSalesRep(data.salesRep || 'TecnoPatch Ventas');
       setValidityDays(data.validityDays || 15);
@@ -571,7 +571,7 @@ export default function App() {
     setProjectType(hist.projectType || 'Residencial');
     setProjectScope(hist.projectScope || '');
     setMarginPercent(hist.marginPercent || 30);
-    setShowModelsInPdf(hist.showModelsInPdf !== undefined ? hist.showModelsInPdf : true);
+    setShowModelsInPdf(false);
     setQuoteStatus(hist.quoteStatus || hist.status || 'Borrador');
     setSalesRep(hist.salesRep || 'TecnoPatch Ventas');
     setValidityDays(hist.validityDays || 15);
@@ -1448,7 +1448,7 @@ export default function App() {
 
                         <div className="pt-2 border-t border-blue-200/50 space-y-3">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-blue-700">Mostrar Modelos/SKU en PDF</span>
+                            <span className="text-[11px] font-bold text-blue-700">PDF interno: mostrar SKU/modelo</span>
                             <label className="relative inline-flex items-center cursor-pointer scale-75 origin-right">
                               <input type="checkbox" className="sr-only peer" checked={showModelsInPdf} onChange={(e) => setShowModelsInPdf(e.target.checked)} />
                               <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
@@ -1845,9 +1845,8 @@ export default function App() {
               <DialogHeader className="p-4 border-b bg-white shrink-0 flex flex-row items-center justify-between">
                 <DialogTitle>Vista Previa del Documento</DialogTitle>
               </DialogHeader>
-              <div className="flex-1 overflow-auto p-2 sm:p-4 md:p-8 bg-slate-400/20 text-left relative flex justify-center">
-                {/* Scaling container for mobile responsiveness of A4 fixed layout */}
-                <div className="origin-top scale-[0.45] xs:scale-[0.55] sm:scale-75 md:scale-90 lg:scale-100 transition-transform w-[21cm] h-fit bg-white shadow-2xl">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6 bg-slate-400/20 text-left relative">
+                <div className="w-full max-w-[21cm] mx-auto h-fit bg-white shadow-2xl">
                   <QuoteDocument
                     quoteItems={quoteItems}
                     clientName={clientName}

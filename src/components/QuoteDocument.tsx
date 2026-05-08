@@ -44,7 +44,7 @@ export function QuoteDocument({
 
             <div>
               <h1 className="text-3xl font-bold tracking-tight mb-1">TecnoPatch</h1>
-              <p className="text-[#06b6d4] text-[9px] uppercase font-bold tracking-widest mb-1.5">TELECOMUNICACIONES · GUADALAJARA, JAL.</p>
+              <p className="text-[#06b6d4] text-[9px] uppercase font-bold tracking-widest mb-1.5">TELECOMUNICACIONES - GUADALAJARA, JAL.</p>
               <div className="text-[10px] text-slate-300 space-y-0.5">
                 <p>33 2849-6052 | 322 518-7656 | serviciotecnopatch@gmail.com</p>
                 <p>Guadalajara, Jalisco</p>
@@ -112,9 +112,9 @@ export function QuoteDocument({
                     <p className="font-bold text-slate-800 leading-snug break-words pr-4">{item.product.titulo}</p>
                     <p className="text-[10px] text-slate-500 mt-2 capitalize font-medium">
                       {item.product.isManual ? (item.product.manualCategory || 'Partida manual') : (item.product.marca || 'Syscom')}
-                      {showModels && !item.product.isManual && ` · ${item.product.modelo}`}
+                      {showModels && !item.product.isManual && ` - ${item.product.modelo}`}
                       {showModels && !item.product.isManual && item.product.producto_id && ` [SKU: ${item.product.producto_id}]`}
-                      {item.product.isManual && item.product.unit && ` · Unidad: ${item.product.unit}`}
+                      {item.product.isManual && item.product.unit && ` - Unidad: ${item.product.unit}`}
                     </p>
                   </td>
                   <td className="py-3 px-4 align-top text-right text-slate-700 whitespace-nowrap">
@@ -138,12 +138,12 @@ export function QuoteDocument({
               <div className="bg-[#0f172a] rounded-xl p-5 text-slate-300">
                 <h4 className="text-[#06b6d4] text-[11px] font-bold uppercase tracking-widest mb-3">Notas y Condiciones</h4>
                 <ul className="text-[10px] space-y-1.5 leading-relaxed">
-                  <li>• Precios en {currency} {includeIva ? 'Incluyen IVA' : 'Mas IVA'} · Vigencia 15 dias naturales</li>
-                  <li>• Tiempo de entrega: 5-10 dias habiles segun volumen del proyecto</li>
-                  <li>• Garantia de instalacion 12 meses · Equipos con garantia del fabricante</li>
-                  <li>• Forma de pago: 60% anticipo, 40% contra entrega y pruebas</li>
-                  <li>• Se entrega documentacion tecnica (planos, certificaciones, contrasenas)</li>
-                  <li>• Soporte tecnico prioritario incluido 30 dias post-instalacion</li>
+                  <li>- Precios en {currency} {includeIva ? 'incluyen IVA' : 'mas IVA'} - Vigencia 15 dias naturales</li>
+                  <li>- Tiempo de entrega: 5-10 dias habiles segun volumen del proyecto</li>
+                  <li>- Garantia de instalacion 12 meses - Equipos con garantia del fabricante</li>
+                  <li>- Forma de pago: 60% anticipo, 40% contra entrega y pruebas</li>
+                  <li>- Se entrega documentacion tecnica (planos, certificaciones, contrasenas)</li>
+                  <li>- Soporte tecnico prioritario incluido 30 dias post-instalacion</li>
                 </ul>
               </div>
             </div>
@@ -182,7 +182,7 @@ export function QuoteDocument({
           </div>
 
           <div className="bg-[#0f172a] text-center py-3 text-[10px] text-slate-300 tracking-wider rounded-lg">
-            TecnoPatch · Guadalajara, Jalisco | Documento confidencial | T.C: ${exchangeRate.toFixed(2)}
+            TecnoPatch - Guadalajara, Jalisco | Documento confidencial | T.C: ${exchangeRate.toFixed(2)}
           </div>
         </div>
       </div>
