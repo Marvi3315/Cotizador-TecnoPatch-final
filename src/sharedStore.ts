@@ -2,11 +2,13 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
   query,
   setDoc,
+  type DocumentReference,
   type Unsubscribe
 } from 'firebase/firestore';
 
@@ -20,6 +22,13 @@ const requireDb = () => {
     throw new Error('Firebase no esta configurado. Agrega las variables VITE_FIREBASE_* en Vercel y en .env local.');
   }
   return db;
+};
+
+const confirmWrite = async (docRef: DocumentReference, label: string) => {
+  const snapshot = await getDoc(docRef);
+  if (!snapshot.exists()) {
+    throw new Error(`Firestore no confirmo el guardado de ${label}. Revisa reglas de escritura.`);
+  }
 };
 
 export function subscribeToQuotes(onData: (quotes: QuoteHistoryItem[]) => void, onError: (error: Error) => void): Unsubscribe {
@@ -61,7 +70,9 @@ export function subscribeToMeetings(onData: (meetings: MeetingRecord[]) => void,
 
 export async function saveSharedQuote(quote: QuoteHistoryItem) {
   const database = requireDb();
-  await setDoc(doc(database, 'quoteHistory', quote.id), cleanForFirestore({ ...quote, savedAt: Date.now() }));
+  const quoteRef = doc(database, 'quoteHistory', quote.id);
+  await setDoc(quoteRef, cleanForFirestore({ ...quote, savedAt: Date.now() }));
+  await confirmWrite(quoteRef, 'la cotizacion');
 }
 
 export async function deleteSharedQuote(id: string) {
@@ -71,10 +82,14 @@ export async function deleteSharedQuote(id: string) {
 
 export async function saveSharedClient(client: ClientRecord) {
   const database = requireDb();
-  await setDoc(doc(database, 'clients', client.id), cleanForFirestore(client));
+  const clientRef = doc(database, 'clients', client.id);
+  await setDoc(clientRef, cleanForFirestore(client));
+  await confirmWrite(clientRef, 'el cliente');
 }
 
 export async function saveSharedMeeting(meeting: MeetingRecord) {
   const database = requireDb();
-  await setDoc(doc(database, 'meetings', meeting.id), cleanForFirestore(meeting));
+  const meetingRef = doc(database, 'meetings', meeting.id);
+  await setDoc(meetingRef, cleanForFirestore(meeting));
+  await confirmWrite(meetingRef, 'la cita');
 }

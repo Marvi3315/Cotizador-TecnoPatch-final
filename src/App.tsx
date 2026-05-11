@@ -224,6 +224,19 @@ export default function App() {
   }, [showMobileCart]);
 
   const formatPrice = (usdAmount: number) => formatSyscomPrice(usdAmount, currency, exchangeRate, includeIva);
+  const cloudIsConnected = cloudStatus === 'Firebase conectado' || cloudStatus === 'Firebase guardado';
+  const cloudIsWriting = cloudStatus === 'Guardando Firebase...';
+  const cloudBadgeClass = cloudIsConnected
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    : cloudIsWriting
+      ? 'bg-blue-50 text-blue-700 border-blue-200'
+      : 'bg-amber-50 text-amber-700 border-amber-200';
+  const cloudDotClass = cloudIsConnected ? 'bg-emerald-500' : cloudIsWriting ? 'bg-blue-500' : 'bg-amber-500';
+  const compactCloudStatus = cloudStatus
+    .replace('Firebase ', 'FB ')
+    .replace('Conectando ', 'Conectando ')
+    .replace('requiere permisos/configuracion', 'sin permisos');
+  const formatCloudError = (error: unknown) => error instanceof Error ? error.message : 'Error desconocido de Firebase';
 
   const filteredResults = results
     .filter(p => selectedBrand === 'Todas' || p.marca === selectedBrand)
@@ -378,7 +391,9 @@ export default function App() {
     };
 
     try {
+      setCloudStatus('Guardando Firebase...');
       await saveSharedClient(client);
+      setCloudStatus('Firebase guardado');
       setClientName(client.name || client.company);
       setClientCompany(client.company);
       setClientPhone(client.phone);
@@ -397,7 +412,8 @@ export default function App() {
       toast.success('Cliente agregado al CRM compartido');
     } catch (error) {
       console.error('Error saving client:', error);
-      toast.error('No se pudo guardar el cliente en Firebase');
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo guardar el cliente: ${formatCloudError(error)}`);
     }
   };
 
@@ -438,7 +454,9 @@ export default function App() {
     };
 
     try {
+      setCloudStatus('Guardando Firebase...');
       await saveSharedMeeting(meeting);
+      setCloudStatus('Firebase guardado');
       setNewMeeting({
         clientId: '',
         title: '',
@@ -453,7 +471,8 @@ export default function App() {
       toast.success('Cita programada en agenda compartida');
     } catch (error) {
       console.error('Error saving meeting:', error);
-      toast.error('No se pudo guardar la cita en Firebase');
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo guardar la cita: ${formatCloudError(error)}`);
     }
   };
 
@@ -462,11 +481,14 @@ export default function App() {
     if (!meeting) return;
 
     try {
+      setCloudStatus('Guardando Firebase...');
       await saveSharedMeeting({ ...meeting, status });
+      setCloudStatus('Firebase guardado');
       toast.success('Cita actualizada');
     } catch (error) {
       console.error('Error updating meeting:', error);
-      toast.error('No se pudo actualizar la cita');
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo actualizar la cita: ${formatCloudError(error)}`);
     }
   };
 
@@ -554,12 +576,15 @@ export default function App() {
     };
 
     try {
+      setCloudStatus('Guardando Firebase...');
       await saveSharedQuote(newQuote);
+      setCloudStatus('Firebase guardado');
       toast.success('Cotizacion guardada en historial compartido');
       setTimeout(() => window.print(), 500);
     } catch (error) {
       console.error('Error saving quote:', error);
-      toast.error('No se pudo guardar la cotizacion en Firebase');
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo guardar la cotizacion: ${formatCloudError(error)}`);
     }
   };
 
@@ -567,11 +592,14 @@ export default function App() {
     e.stopPropagation();
 
     try {
+      setCloudStatus('Guardando Firebase...');
       await deleteSharedQuote(id);
+      setCloudStatus('Firebase guardado');
       toast.success('Cotizacion eliminada del historial compartido');
     } catch (error) {
       console.error('Error deleting quote:', error);
-      toast.error('No se pudo eliminar la cotizacion');
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo eliminar la cotizacion: ${formatCloudError(error)}`);
     }
   };
 
@@ -732,10 +760,15 @@ export default function App() {
         </button>
       </div>
 
-      {/* Indicador de conexion compacto */}
-      <div className="flex items-center gap-1 shrink-0 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-        <span className="text-[8px] font-black text-emerald-700">TC: ${exchangeRate.toFixed(2)}</span>
+      {/* Indicadores compactos */}
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <div className={`flex items-center gap-1 max-w-[132px] px-2 py-1 rounded-lg border ${cloudBadgeClass}`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${cloudDotClass} animate-pulse`}></div>
+          <span className="text-[8px] font-black truncate">{compactCloudStatus}</span>
+        </div>
+        <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+          <span className="text-[8px] font-black text-slate-500">TC: ${exchangeRate.toFixed(2)}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -809,7 +842,7 @@ export default function App() {
     </Button>
 
     <div className="hidden sm:flex flex-col items-end shrink-0">
-      <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold border whitespace-nowrap ${cloudStatus === 'Firebase conectado' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+      <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold border whitespace-nowrap ${cloudBadgeClass}`}>
         {cloudStatus}
       </span>
       <span className="text-[9px] text-slate-500 font-bold mt-0.5">TC: ${exchangeRate.toFixed(2)}</span>
