@@ -101,7 +101,7 @@ export default function App() {
   const pipelineTotal = quoteHistory.reduce((acc, quote) => acc + (quote.total || 0), 0);
   const pendingMeetings = meetings.filter(meeting => meeting.status === 'Programada' || meeting.status === 'Reagendada');
   const activeClients = clients.filter(client => client.status !== 'Pausado');
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = new Date().toLocaleDateString('en-CA');
   const todayMeetings = meetings.filter(meeting => meeting.date === todayIso);
   const moduleTabs = [
     { id: 'cotizador', label: 'Cotizador', icon: ShoppingCart },
