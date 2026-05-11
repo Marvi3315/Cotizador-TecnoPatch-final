@@ -134,6 +134,11 @@ export default function App() {
     const cloudSubscriptions: Array<() => void> = [];
 
     if (firebaseReady) {
+      const statusTimer = window.setTimeout(() => {
+        setCloudStatus(current => current === 'Conectando Firebase...' ? 'Firebase sincronizando...' : current);
+      }, 3500);
+      cloudSubscriptions.push(() => window.clearTimeout(statusTimer));
+
       const handleCloudError = (error: Error) => {
         console.error('Firebase sync error:', error);
         setCloudStatus('Firebase requiere permisos/configuracion');
@@ -142,14 +147,17 @@ export default function App() {
 
       cloudSubscriptions.push(
         subscribeToQuotes(data => {
+          window.clearTimeout(statusTimer);
           setQuoteHistory(data);
           setCloudStatus('Firebase conectado');
         }, handleCloudError),
         subscribeToClients(data => {
+          window.clearTimeout(statusTimer);
           setClients(data);
           setCloudStatus('Firebase conectado');
         }, handleCloudError),
         subscribeToMeetings(data => {
+          window.clearTimeout(statusTimer);
           setMeetings(data);
           setCloudStatus('Firebase conectado');
         }, handleCloudError)
@@ -672,6 +680,7 @@ export default function App() {
     {/* Fila 1: Barra de busqueda */}
     <form onSubmit={handleSearch} className="relative">
       <Input 
+        name="mobile-search"
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         placeholder="Buscar productos..." 
@@ -736,6 +745,7 @@ export default function App() {
     <form onSubmit={handleSearch} className="hidden md:flex flex-1 md:max-w-[300px] lg:max-w-[400px] relative gap-2">
       <div className="flex-1 relative">
         <Input 
+          name="desktop-search"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Buscar..." 
@@ -942,6 +952,7 @@ export default function App() {
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter shrink-0">Marca</span>
                         <select
+                          name="product-brand-filter"
                           className="text-[11px] border border-slate-200 rounded px-1 py-1.5 bg-white outline-none focus:ring-1 ring-blue-500 min-w-[90px] font-medium"
                           value={selectedBrand}
                           onChange={e => setSelectedBrand(e.target.value)}
@@ -952,6 +963,7 @@ export default function App() {
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter shrink-0">Ordenar</span>
                         <select
+                          name="product-sort"
                           className="text-[11px] border border-slate-200 rounded px-1 py-1.5 bg-white outline-none focus:ring-1 ring-blue-500 font-medium"
                           value={sortBy}
                           onChange={e => setSortBy(e.target.value as any)}
@@ -1277,6 +1289,7 @@ export default function App() {
                     </div>
 
                     <Input
+                      name="manual-title"
                       placeholder="Ej. Tuberia conduit 3/4, mano de obra, configuracion, obra civil..."
                       className="h-9 text-sm"
                       value={manualTitle}
@@ -1285,6 +1298,7 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-2">
                       <select
+                        name="manual-category"
                         className="h-9 text-sm border-slate-200 rounded-md bg-white border px-3 focus-visible:ring-blue-600 outline-none"
                         value={manualCategory}
                         onChange={e => setManualCategory(e.target.value)}
@@ -1297,6 +1311,7 @@ export default function App() {
                         <option>Otro</option>
                       </select>
                       <Input
+                        name="manual-unit"
                         placeholder="Unidad"
                         className="h-9 text-sm"
                         value={manualUnit}
@@ -1306,6 +1321,7 @@ export default function App() {
 
                     <div className="grid grid-cols-[88px_1fr] gap-2">
                       <Input
+                        name="manual-quantity"
                         type="number"
                         min="1"
                         className="h-9 text-sm"
@@ -1315,6 +1331,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black text-slate-500 uppercase shrink-0">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
                         <Input
+                          name="manual-unit-price"
                           type="number"
                           min="0"
                           step="0.01"

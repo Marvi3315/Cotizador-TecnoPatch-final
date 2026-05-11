@@ -9,6 +9,9 @@ const SYSCOM_CLIENT_SECRET = process.env.SYSCOM_CLIENT_SECRET;
 
 let syscomToken: string | null = null;
 let syscomTokenExpiresAt = 0;
+let exchangeCache: any = null;
+let exchangeCacheAt = 0;
+const EXCHANGE_CACHE_TTL = 1000 * 60 * 30;
 
 async function getSyscomToken() {
   if (!SYSCOM_CLIENT_ID || !SYSCOM_CLIENT_SECRET) {
@@ -89,6 +92,11 @@ app.get('/api/syscom/categorias', async (req, res) => {
 
 app.get('/api/syscom/exchange', async (req, res) => {
   try {
+    if (exchangeCache && Date.now() - exchangeCacheAt < EXCHANGE_CACHE_TTL) {
+      res.json(exchangeCache);
+      return;
+    }
+
     const token = await getSyscomToken();
     const response = await fetch(`https://developers.syscom.mx/api/v1/tipocambio`, {
       headers: {
@@ -96,6 +104,8 @@ app.get('/api/syscom/exchange', async (req, res) => {
       }
     });
     const data = await response.json();
+    exchangeCache = data;
+    exchangeCacheAt = Date.now();
     res.json(data);
   } catch (error: any) {
     console.error(error);
