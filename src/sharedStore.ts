@@ -2,7 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
+  getDocFromServer,
   limit,
   onSnapshot,
   orderBy,
@@ -25,9 +25,9 @@ const requireDb = () => {
 };
 
 const confirmWrite = async (docRef: DocumentReference, label: string) => {
-  const snapshot = await getDoc(docRef);
+  const snapshot = await getDocFromServer(docRef);
   if (!snapshot.exists()) {
-    throw new Error(`Firestore no confirmo el guardado de ${label}. Revisa reglas de escritura.`);
+    throw new Error(`Firestore no confirmo en servidor el guardado de ${label}. Revisa reglas, App Check o variables de Vercel.`);
   }
 };
 
