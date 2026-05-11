@@ -55,6 +55,7 @@ export interface QuoteHistoryItem {
   validityDays?: number;
   advancePercent?: number;
   paymentTerms?: string;
+  savedAt?: number;
 }
 
 export interface ClientRecord {

@@ -9,8 +9,18 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast, Toaster } from 'sonner';
 
+import { firebaseReady } from './firebase';
 import { QuoteDocument } from './components/QuoteDocument';
 import { calculateMargin, calculateSubtotal as getQuoteSubtotal, calculateTotalCostDisplay as getTotalCostDisplay, formatSyscomPrice } from './pricing';
+import {
+  deleteSharedQuote,
+  saveSharedClient,
+  saveSharedMeeting,
+  saveSharedQuote,
+  subscribeToClients,
+  subscribeToMeetings,
+  subscribeToQuotes
+} from './sharedStore';
 import type { Product, QuoteItem, QuoteHistoryItem, ClientRecord, MeetingRecord } from './types';
 
 export default function App() {
@@ -44,6 +54,7 @@ export default function App() {
   const [activeModule, setActiveModule] = useState<'cotizador' | 'clientes' | 'citas' | 'seguimiento'>('cotizador');
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
+  const [cloudStatus, setCloudStatus] = useState(firebaseReady ? 'Conectando Firebase...' : 'Firebase sin configurar');
   const [quoteStatus, setQuoteStatus] = useState<'Borrador' | 'Enviada' | 'Seguimiento' | 'Aceptada' | 'Rechazada'>('Borrador');
   const [salesRep, setSalesRep] = useState('TecnoPatch Ventas');
   const [validityDays, setValidityDays] = useState(15);
@@ -120,35 +131,31 @@ export default function App() {
       container.addEventListener('scroll', handleScroll);
     }
 
-    // Initial Loading
-    const savedHistory = localStorage.getItem('quoteHistory');
-    if (savedHistory) setQuoteHistory(JSON.parse(savedHistory));
+    const cloudSubscriptions: Array<() => void> = [];
 
-    const savedClients = localStorage.getItem('crmClients');
-    if (savedClients) setClients(JSON.parse(savedClients));
+    if (firebaseReady) {
+      const handleCloudError = (error: Error) => {
+        console.error('Firebase sync error:', error);
+        setCloudStatus('Firebase requiere permisos/configuracion');
+        toast.error('No se pudo sincronizar con Firebase. Revisa Firestore y variables VITE_FIREBASE_*.');
+      };
 
-    const savedMeetings = localStorage.getItem('crmMeetings');
-    if (savedMeetings) setMeetings(JSON.parse(savedMeetings));
-
-    const savedCurrent = localStorage.getItem('currentQuote');
-    if (savedCurrent) {
-      const data = JSON.parse(savedCurrent);
-      setQuoteItems(data.items || []);
-      setClientName(data.clientName || '');
-      setClientCompany(data.clientCompany || '');
-      setClientPhone(data.clientPhone || '');
-      setClientEmail(data.clientEmail || '');
-      setProjectType(data.projectType || 'Residencial');
-      setProjectScope(data.projectScope || '');
-      setMarginPercent(data.marginPercent || 30);
-      setIncludeIva(data.includeIva !== undefined ? data.includeIva : true);
-      setCurrency(data.currency || 'MXN');
-      setShowModelsInPdf(false);
-      setQuoteStatus(data.quoteStatus || 'Borrador');
-      setSalesRep(data.salesRep || 'TecnoPatch Ventas');
-      setValidityDays(data.validityDays || 15);
-      setAdvancePercent(data.advancePercent || 60);
-      setPaymentTerms(data.paymentTerms || '60% anticipo, 40% contra entrega');
+      cloudSubscriptions.push(
+        subscribeToQuotes(data => {
+          setQuoteHistory(data);
+          setCloudStatus('Firebase conectado');
+        }, handleCloudError),
+        subscribeToClients(data => {
+          setClients(data);
+          setCloudStatus('Firebase conectado');
+        }, handleCloudError),
+        subscribeToMeetings(data => {
+          setMeetings(data);
+          setCloudStatus('Firebase conectado');
+        }, handleCloudError)
+      );
+    } else {
+      setCloudStatus('Firebase sin configurar');
     }
 
     // Always scroll to top on reload if there's no hash
@@ -176,39 +183,9 @@ export default function App() {
       if (container) {
         container.removeEventListener('scroll', handleScroll);
       }
+      cloudSubscriptions.forEach(unsubscribe => unsubscribe());
     };
   }, []);
-
-  // Save current quote state to localStorage on every change
-  useEffect(() => {
-    const currentQuote = {
-      items: quoteItems,
-      clientName,
-      clientCompany,
-      clientPhone,
-      clientEmail,
-      projectType,
-      projectScope,
-      marginPercent,
-      includeIva,
-      currency,
-      showModelsInPdf,
-      quoteStatus,
-      salesRep,
-      validityDays,
-      advancePercent,
-      paymentTerms
-    };
-    localStorage.setItem('currentQuote', JSON.stringify(currentQuote));
-  }, [quoteItems, clientName, clientCompany, clientPhone, clientEmail, projectType, projectScope, marginPercent, includeIva, currency, showModelsInPdf, quoteStatus, salesRep, validityDays, advancePercent, paymentTerms]);
-
-  useEffect(() => {
-    localStorage.setItem('crmClients', JSON.stringify(clients));
-  }, [clients]);
-
-  useEffect(() => {
-    localStorage.setItem('crmMeetings', JSON.stringify(meetings));
-  }, [meetings]);
 
   // Update brands list when results change
   useEffect(() => {
@@ -372,7 +349,7 @@ export default function App() {
     setManualQuantity(template.quantity);
   };
 
-  const createClient = () => {
+  const createClient = async () => {
     if (!newClient.name.trim() && !newClient.company.trim()) {
       toast.error('Agrega nombre o empresa del cliente');
       return;
@@ -389,26 +366,31 @@ export default function App() {
       status: newClient.status,
       owner: newClient.owner.trim() || 'Ventas',
       notes: newClient.notes.trim(),
-      createdAt: new Date().toLocaleString('es-MX')
+      createdAt: new Date().toISOString()
     };
 
-    setClients(current => [client, ...current]);
-    setClientName(client.name || client.company);
-    setClientCompany(client.company);
-    setClientPhone(client.phone);
-    setClientEmail(client.email);
-    setNewClient({
-      name: '',
-      company: '',
-      phone: '',
-      email: '',
-      address: '',
-      source: 'WhatsApp',
-      status: 'Prospecto',
-      owner: 'Ventas',
-      notes: ''
-    });
-    toast.success('Cliente agregado al CRM');
+    try {
+      await saveSharedClient(client);
+      setClientName(client.name || client.company);
+      setClientCompany(client.company);
+      setClientPhone(client.phone);
+      setClientEmail(client.email);
+      setNewClient({
+        name: '',
+        company: '',
+        phone: '',
+        email: '',
+        address: '',
+        source: 'WhatsApp',
+        status: 'Prospecto',
+        owner: 'Ventas',
+        notes: ''
+      });
+      toast.success('Cliente agregado al CRM compartido');
+    } catch (error) {
+      console.error('Error saving client:', error);
+      toast.error('No se pudo guardar el cliente en Firebase');
+    }
   };
 
   const useClientInQuote = (client: ClientRecord) => {
@@ -421,7 +403,7 @@ export default function App() {
     toast.success('Cliente cargado en cotizacion');
   };
 
-  const createMeeting = () => {
+  const createMeeting = async () => {
     const selectedClient = clients.find(client => client.id === newMeeting.clientId);
     const fallbackClientName = clientName || clientCompany;
     if (!selectedClient && !fallbackClientName) {
@@ -447,23 +429,37 @@ export default function App() {
       notes: newMeeting.notes.trim()
     };
 
-    setMeetings(current => [meeting, ...current].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)));
-    setNewMeeting({
-      clientId: '',
-      title: '',
-      date: '',
-      time: '',
-      type: 'Visita tecnica',
-      owner: 'Ventas',
-      location: '',
-      status: 'Programada',
-      notes: ''
-    });
-    toast.success('Cita programada');
+    try {
+      await saveSharedMeeting(meeting);
+      setNewMeeting({
+        clientId: '',
+        title: '',
+        date: '',
+        time: '',
+        type: 'Visita tecnica',
+        owner: 'Ventas',
+        location: '',
+        status: 'Programada',
+        notes: ''
+      });
+      toast.success('Cita programada en agenda compartida');
+    } catch (error) {
+      console.error('Error saving meeting:', error);
+      toast.error('No se pudo guardar la cita en Firebase');
+    }
   };
 
-  const updateMeetingStatus = (id: string, status: MeetingRecord['status']) => {
-    setMeetings(current => current.map(meeting => meeting.id === id ? { ...meeting, status } : meeting));
+  const updateMeetingStatus = async (id: string, status: MeetingRecord['status']) => {
+    const meeting = meetings.find(item => item.id === id);
+    if (!meeting) return;
+
+    try {
+      await saveSharedMeeting({ ...meeting, status });
+      toast.success('Cita actualizada');
+    } catch (error) {
+      console.error('Error updating meeting:', error);
+      toast.error('No se pudo actualizar la cita');
+    }
   };
 
   const applyGlobalMargin = (percent = marginPercent) => {
@@ -520,9 +516,9 @@ export default function App() {
 
   const margin = calculateMargin(subtotal, calculateTotalCostDisplay(), includeIva);
 
-  const saveQuoteToHistory = () => {
+  const saveQuoteToHistory = async () => {
     if (quoteItems.length === 0) return;
-    const newQuote: any = {
+    const newQuote: QuoteHistoryItem = {
       id: Math.random().toString(36).substring(2, 9),
       quoteNumber,
       date: new Date().toLocaleString(),
@@ -531,6 +527,7 @@ export default function App() {
       tax,
       total,
       includeTax: includeIva,
+      currency,
       exchangeRate,
       clientName,
       clientCompany,
@@ -544,21 +541,30 @@ export default function App() {
       salesRep,
       validityDays,
       advancePercent,
-      paymentTerms
+      paymentTerms,
+      savedAt: Date.now()
     };
-    const newHistory = [newQuote, ...quoteHistory].slice(0, 50); // keep last 50
-    setQuoteHistory(newHistory);
-    localStorage.setItem('quoteHistory', JSON.stringify(newHistory));
-    toast.success('Quote saved to history!');
-    setTimeout(() => window.print(), 500);
+
+    try {
+      await saveSharedQuote(newQuote);
+      toast.success('Cotizacion guardada en historial compartido');
+      setTimeout(() => window.print(), 500);
+    } catch (error) {
+      console.error('Error saving quote:', error);
+      toast.error('No se pudo guardar la cotizacion en Firebase');
+    }
   };
 
-  const deleteFromHistory = (e: React.MouseEvent, id: string) => {
+  const deleteFromHistory = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    const newHistory = quoteHistory.filter(h => h.id !== id);
-    setQuoteHistory(newHistory);
-    localStorage.setItem('quoteHistory', JSON.stringify(newHistory));
-    toast.success('Cotizacion eliminada del historial');
+
+    try {
+      await deleteSharedQuote(id);
+      toast.success('Cotizacion eliminada del historial compartido');
+    } catch (error) {
+      console.error('Error deleting quote:', error);
+      toast.error('No se pudo eliminar la cotizacion');
+    }
   };
 
   const restoreQuote = (hist: any) => {
@@ -793,7 +799,9 @@ export default function App() {
     </Button>
 
     <div className="hidden sm:flex flex-col items-end shrink-0">
-      <span className="bg-emerald-50 text-emerald-600 text-[9px] px-2 py-0.5 rounded-full font-semibold border border-emerald-200 whitespace-nowrap">CONECTADO</span>
+      <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold border whitespace-nowrap ${cloudStatus === 'Firebase conectado' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+        {cloudStatus}
+      </span>
       <span className="text-[9px] text-slate-500 font-bold mt-0.5">TC: ${exchangeRate.toFixed(2)}</span>
     </div>
   </div>
