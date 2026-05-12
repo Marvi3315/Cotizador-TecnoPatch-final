@@ -46,6 +46,8 @@ export interface QuoteHistoryItem {
   clientCompany?: string;
   clientPhone?: string;
   clientEmail?: string;
+  clientRfc?: string;
+  clientContactRole?: string;
   projectType?: string;
   projectScope?: string;
   marginPercent?: number;
@@ -64,6 +66,8 @@ export interface ClientRecord {
   company: string;
   phone: string;
   email: string;
+  rfc?: string;
+  contactRole?: string;
   address: string;
   source: string;
   status: 'Prospecto' | 'Cotizado' | 'Seguimiento' | 'Cliente' | 'Pausado';

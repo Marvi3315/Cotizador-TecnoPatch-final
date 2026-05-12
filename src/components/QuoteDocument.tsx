@@ -4,6 +4,10 @@ interface QuoteDocumentProps {
   quoteItems: QuoteItem[];
   clientName: string;
   clientCompany: string;
+  clientPhone?: string;
+  clientEmail?: string;
+  clientRfc?: string;
+  clientContactRole?: string;
   projectType: string;
   subtotal: number;
   tax: number;
@@ -20,6 +24,10 @@ export function QuoteDocument({
   quoteItems,
   clientName,
   clientCompany,
+  clientPhone = '',
+  clientEmail = '',
+  clientRfc = '',
+  clientContactRole = '',
   projectType,
   subtotal,
   tax,
@@ -32,6 +40,7 @@ export function QuoteDocument({
   quoteNumber
 }: QuoteDocumentProps) {
   const symbol = currency === 'USD' ? 'USD $' : '$';
+  const contactLines = [clientContactRole, clientPhone, clientEmail].filter(Boolean);
 
   return (
     <div className="quote-document w-[21cm] max-w-none text-left bg-white font-sans flex flex-col" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -71,11 +80,21 @@ export function QuoteDocument({
             </div>
             <div>
               <p className="text-blue-500 text-[10px] font-bold uppercase tracking-wider mb-2">RFC</p>
-              <p className="text-white font-bold text-sm">N/A</p>
+              <p className="text-white font-bold text-sm">{clientRfc || 'N/A'}</p>
             </div>
             <div>
               <p className="text-blue-500 text-[10px] font-bold uppercase tracking-wider mb-2">Contacto</p>
-              <p className="text-white font-bold text-sm">N/A</p>
+              {contactLines.length > 0 ? (
+                <div className="space-y-0.5">
+                  {contactLines.map((line, index) => (
+                    <p key={`${line}-${index}`} className={index === 0 ? 'text-white font-bold text-sm' : 'text-slate-300 text-[11px]'}>
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-white font-bold text-sm">N/A</p>
+              )}
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-700/50">

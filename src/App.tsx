@@ -44,6 +44,8 @@ export default function App() {
   const [clientCompany, setClientCompany] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
+  const [clientRfc, setClientRfc] = useState('');
+  const [clientContactRole, setClientContactRole] = useState('');
   const [projectType, setProjectType] = useState('Residencial');
   const [projectScope, setProjectScope] = useState('');
   const [manualTitle, setManualTitle] = useState('');
@@ -65,6 +67,8 @@ export default function App() {
     company: '',
     phone: '',
     email: '',
+    rfc: '',
+    contactRole: '',
     address: '',
     source: 'WhatsApp',
     status: 'Prospecto' as ClientRecord['status'],
@@ -382,6 +386,8 @@ export default function App() {
       company: newClient.company.trim(),
       phone: newClient.phone.trim(),
       email: newClient.email.trim(),
+      rfc: newClient.rfc.trim(),
+      contactRole: newClient.contactRole.trim(),
       address: newClient.address.trim(),
       source: newClient.source,
       status: newClient.status,
@@ -398,11 +404,15 @@ export default function App() {
       setClientCompany(client.company);
       setClientPhone(client.phone);
       setClientEmail(client.email);
+      setClientRfc(client.rfc || '');
+      setClientContactRole(client.contactRole || '');
       setNewClient({
         name: '',
         company: '',
         phone: '',
         email: '',
+        rfc: '',
+        contactRole: '',
         address: '',
         source: 'WhatsApp',
         status: 'Prospecto',
@@ -422,6 +432,8 @@ export default function App() {
     setClientCompany(client.company);
     setClientPhone(client.phone);
     setClientEmail(client.email);
+    setClientRfc(client.rfc || '');
+    setClientContactRole(client.contactRole || '');
     setProjectScope(current => current || (client.address ? `Direccion del proyecto: ${client.address}` : ''));
     setActiveModule('cotizador');
     toast.success('Cliente cargado en cotizacion');
@@ -508,8 +520,19 @@ export default function App() {
     setQuoteItems(current =>
       current.map(item => {
         if (item.product.producto_id === id) {
-          const newQuantity = Math.max(1, item.quantity + delta);
+          const newQuantity = Math.max(0.01, item.quantity + delta);
           return { ...item, quantity: newQuantity };
+        }
+        return item;
+      })
+    );
+  };
+
+  const updateItemQuantity = (id: string, quantity: number) => {
+    setQuoteItems(current =>
+      current.map(item => {
+        if (item.product.producto_id === id) {
+          return { ...item, quantity: Number.isFinite(quantity) ? Math.max(0.01, quantity) : item.quantity };
         }
         return item;
       })
@@ -563,6 +586,8 @@ export default function App() {
       clientCompany,
       clientPhone,
       clientEmail,
+      clientRfc,
+      clientContactRole,
       projectType,
       projectScope,
       marginPercent,
@@ -610,6 +635,8 @@ export default function App() {
     setClientCompany(hist.clientCompany || '');
     setClientPhone(hist.clientPhone || '');
     setClientEmail(hist.clientEmail || '');
+    setClientRfc(hist.clientRfc || '');
+    setClientContactRole(hist.clientContactRole || '');
     setProjectType(hist.projectType || 'Residencial');
     setProjectScope(hist.projectScope || '');
     setMarginPercent(hist.marginPercent || 30);
@@ -1356,10 +1383,12 @@ export default function App() {
                       <Input
                         name="manual-quantity"
                         type="number"
-                        min="1"
+                        min="0.01"
+                        step="0.01"
+                        inputMode="decimal"
                         className="h-9 text-sm"
                         value={manualQuantity}
-                        onChange={e => setManualQuantity(Math.max(1, parseFloat(e.target.value) || 1))}
+                        onChange={e => setManualQuantity(Math.max(0.01, parseFloat(e.target.value) || 1))}
                       />
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black text-slate-500 uppercase shrink-0">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
@@ -1418,7 +1447,16 @@ export default function App() {
                             <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
                               <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden">
                                 <button onClick={() => updateQuantity(item.product.producto_id, -1)} className="p-2 px-3 hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Minus size={16} /></button>
-                                <span className="text-[14px] font-mono px-3 min-w-[40px] text-center bg-slate-50 py-2 font-bold">{item.quantity}</span>
+                                <Input
+                                  name={`quote-quantity-${item.product.producto_id}`}
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  inputMode="decimal"
+                                  className="h-9 w-16 rounded-none border-0 border-x bg-slate-50 px-1 text-center font-mono text-[13px] font-bold focus-visible:ring-0"
+                                  value={item.quantity}
+                                  onChange={(e) => updateItemQuantity(item.product.producto_id, parseFloat(e.target.value))}
+                                />
                                 <button onClick={() => updateQuantity(item.product.producto_id, 1)} className="p-2 px-3 hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Plus size={16} /></button>
                               </div>
 
@@ -1426,7 +1464,11 @@ export default function App() {
                                 <div className="flex items-center">
                                   <span className="text-slate-500 text-[10px] font-black mr-1 uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
                                   <Input
+                                    name={`quote-price-${item.product.producto_id}`}
                                     type="number"
+                                    min="0"
+                                    step="0.01"
+                                    inputMode="decimal"
                                     className="h-10 w-28 text-right px-3 font-black text-[14px] border-slate-200 focus:border-blue-500"
                                     value={(currency === 'USD' ? item.unitPriceMxn / exchangeRate : item.unitPriceMxn).toFixed(2)}
                                     onChange={(e) => {
@@ -1520,13 +1562,36 @@ export default function App() {
                         <h4 className="text-[11px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
                           <FileText size={14} /> Datos del Cliente
                         </h4>
+                        {clients.length > 0 && (
+                          <select
+                            name="quote-saved-client"
+                            className="h-9 text-sm border-slate-200 rounded-md bg-blue-50/60 border px-3 text-slate-700 focus-visible:ring-blue-600 outline-none"
+                            defaultValue=""
+                            onChange={e => {
+                              const selectedClient = clients.find(client => client.id === e.target.value);
+                              if (selectedClient) {
+                                useClientInQuote(selectedClient);
+                                e.currentTarget.value = '';
+                              }
+                            }}
+                          >
+                            <option value="">Cargar cliente guardado...</option>
+                            {clients.map(client => (
+                              <option key={client.id} value={client.id}>
+                                {client.company || client.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         <Input
+                          name="quote-client-name"
                           placeholder="Nombre del Cliente / Contacto"
                           className="h-9 text-sm"
                           value={clientName}
                           onChange={e => setClientName(e.target.value)}
                         />
                         <Input
+                          name="quote-client-company"
                           placeholder="Empresa o Negocio"
                           className="h-9 text-sm"
                           value={clientCompany}
@@ -1534,12 +1599,35 @@ export default function App() {
                         />
                         <div className="grid grid-cols-2 gap-2">
                           <Input
-                            placeholder="WhatApp"
+                            name="quote-client-phone"
+                            placeholder="WhatsApp"
                             className="h-9 text-sm"
                             value={clientPhone}
                             onChange={e => setClientPhone(e.target.value)}
                           />
+                          <Input
+                            name="quote-client-email"
+                            placeholder="Correo"
+                            className="h-9 text-sm"
+                            value={clientEmail}
+                            onChange={e => setClientEmail(e.target.value)}
+                          />
+                          <Input
+                            name="quote-client-rfc"
+                            placeholder="RFC"
+                            className="h-9 text-sm"
+                            value={clientRfc}
+                            onChange={e => setClientRfc(e.target.value.toUpperCase())}
+                          />
+                          <Input
+                            name="quote-client-role"
+                            placeholder="Contacto / Cargo"
+                            className="h-9 text-sm"
+                            value={clientContactRole}
+                            onChange={e => setClientContactRole(e.target.value)}
+                          />
                           <select
+                            name="quote-project-type"
                             className="h-9 text-sm border-slate-200 rounded-md bg-white border px-3 focus-visible:ring-blue-600 outline-none"
                             value={projectType}
                             onChange={e => setProjectType(e.target.value)}
@@ -1690,25 +1778,29 @@ export default function App() {
                     <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
                       <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><UserPlus size={20} className="text-blue-600" /> Nuevo Cliente</h2>
                       <div className="mt-4 space-y-3">
-                        <Input placeholder="Nombre del contacto" value={newClient.name} onChange={e => setNewClient({ ...newClient, name: e.target.value })} />
-                        <Input placeholder="Empresa / Negocio" value={newClient.company} onChange={e => setNewClient({ ...newClient, company: e.target.value })} />
+                        <Input name="crm-client-name" placeholder="Nombre del contacto" value={newClient.name} onChange={e => setNewClient({ ...newClient, name: e.target.value })} />
+                        <Input name="crm-client-company" placeholder="Empresa / Negocio" value={newClient.company} onChange={e => setNewClient({ ...newClient, company: e.target.value })} />
                         <div className="grid grid-cols-2 gap-2">
-                          <Input placeholder="WhatsApp" value={newClient.phone} onChange={e => setNewClient({ ...newClient, phone: e.target.value })} />
-                          <Input placeholder="Correo" value={newClient.email} onChange={e => setNewClient({ ...newClient, email: e.target.value })} />
+                          <Input name="crm-client-phone" placeholder="WhatsApp" value={newClient.phone} onChange={e => setNewClient({ ...newClient, phone: e.target.value })} />
+                          <Input name="crm-client-email" placeholder="Correo" value={newClient.email} onChange={e => setNewClient({ ...newClient, email: e.target.value })} />
                         </div>
-                        <Input placeholder="Direccion del proyecto" value={newClient.address} onChange={e => setNewClient({ ...newClient, address: e.target.value })} />
                         <div className="grid grid-cols-2 gap-2">
-                          <select className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={newClient.status} onChange={e => setNewClient({ ...newClient, status: e.target.value as ClientRecord['status'] })}>
+                          <Input name="crm-client-rfc" placeholder="RFC" value={newClient.rfc} onChange={e => setNewClient({ ...newClient, rfc: e.target.value.toUpperCase() })} />
+                          <Input name="crm-client-role" placeholder="Contacto / Cargo" value={newClient.contactRole} onChange={e => setNewClient({ ...newClient, contactRole: e.target.value })} />
+                        </div>
+                        <Input name="crm-client-address" placeholder="Direccion del proyecto" value={newClient.address} onChange={e => setNewClient({ ...newClient, address: e.target.value })} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <select name="crm-client-status" className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={newClient.status} onChange={e => setNewClient({ ...newClient, status: e.target.value as ClientRecord['status'] })}>
                             <option>Prospecto</option>
                             <option>Cotizado</option>
                             <option>Seguimiento</option>
                             <option>Cliente</option>
                             <option>Pausado</option>
                           </select>
-                          <Input placeholder="Vendedor" value={newClient.owner} onChange={e => setNewClient({ ...newClient, owner: e.target.value })} />
+                          <Input name="crm-client-owner" placeholder="Vendedor" value={newClient.owner} onChange={e => setNewClient({ ...newClient, owner: e.target.value })} />
                         </div>
-                        <Input placeholder="Origen: WhatsApp, referido, web..." value={newClient.source} onChange={e => setNewClient({ ...newClient, source: e.target.value })} />
-                        <textarea className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Notas internas" value={newClient.notes} onChange={e => setNewClient({ ...newClient, notes: e.target.value })} />
+                        <Input name="crm-client-source" placeholder="Origen: WhatsApp, referido, web..." value={newClient.source} onChange={e => setNewClient({ ...newClient, source: e.target.value })} />
+                        <textarea name="crm-client-notes" className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Notas internas" value={newClient.notes} onChange={e => setNewClient({ ...newClient, notes: e.target.value })} />
                         <Button onClick={createClient} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black"><UserPlus size={16} className="mr-2" /> Guardar Cliente</Button>
                       </div>
                     </section>
@@ -1732,6 +1824,8 @@ export default function App() {
                               <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
                                 {client.phone && <span className="flex items-center gap-1"><Phone size={12} /> {client.phone}</span>}
                                 {client.email && <span className="flex items-center gap-1"><Mail size={12} /> {client.email}</span>}
+                                {client.rfc && <span>RFC: {client.rfc}</span>}
+                                {client.contactRole && <span>{client.contactRole}</span>}
                                 {client.address && <span className="flex items-center gap-1"><MapPin size={12} /> {client.address}</span>}
                               </div>
                             </div>
@@ -1884,6 +1978,10 @@ export default function App() {
               quoteItems={quoteItems}
               clientName={clientName}
               clientCompany={clientCompany}
+              clientPhone={clientPhone}
+              clientEmail={clientEmail}
+              clientRfc={clientRfc}
+              clientContactRole={clientContactRole}
               projectType={projectType}
               subtotal={subtotal}
               tax={tax}
@@ -1909,6 +2007,10 @@ export default function App() {
                     quoteItems={quoteItems}
                     clientName={clientName}
                     clientCompany={clientCompany}
+                    clientPhone={clientPhone}
+                    clientEmail={clientEmail}
+                    clientRfc={clientRfc}
+                    clientContactRole={clientContactRole}
                     projectType={projectType}
                     subtotal={subtotal}
                     tax={tax}
