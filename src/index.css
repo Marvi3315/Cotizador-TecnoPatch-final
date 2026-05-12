@@ -125,6 +125,16 @@
   .animate-float {
     animation: float 6s ease-in-out infinite;
   }
+
+  .no-number-spinner::-webkit-outer-spin-button,
+  .no-number-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .no-number-spinner {
+    -moz-appearance: textfield;
+  }
 }
 
 @keyframes float {

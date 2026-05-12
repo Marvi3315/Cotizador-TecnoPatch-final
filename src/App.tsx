@@ -1444,32 +1444,32 @@ export default function App() {
                               </div>
                             </div>
 
-                            <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
-                              <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden">
-                                <button onClick={() => updateQuantity(item.product.producto_id, -1)} className="p-2 px-3 hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Minus size={16} /></button>
+                            <div className="mt-3 grid grid-cols-1 gap-3 border-t pt-3">
+                              <div className="grid w-full grid-cols-[44px_minmax(96px,1fr)_44px] overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                <button onClick={() => updateQuantity(item.product.producto_id, -1)} className="flex h-11 items-center justify-center hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Minus size={16} /></button>
                                 <Input
                                   name={`quote-quantity-${item.product.producto_id}`}
                                   type="number"
                                   min="0.01"
                                   step="0.01"
                                   inputMode="decimal"
-                                  className="h-9 w-16 rounded-none border-0 border-x bg-slate-50 px-1 text-center font-mono text-[13px] font-bold focus-visible:ring-0"
+                                  className="no-number-spinner h-11 min-w-0 rounded-none border-0 border-x bg-slate-50 px-3 text-center font-mono text-[15px] font-black focus-visible:ring-0"
                                   value={item.quantity}
                                   onChange={(e) => updateItemQuantity(item.product.producto_id, parseFloat(e.target.value))}
                                 />
-                                <button onClick={() => updateQuantity(item.product.producto_id, 1)} className="p-2 px-3 hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Plus size={16} /></button>
+                                <button onClick={() => updateQuantity(item.product.producto_id, 1)} className="flex h-11 items-center justify-center hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Plus size={16} /></button>
                               </div>
 
-                              <div className="flex flex-col items-end">
-                                <div className="flex items-center">
-                                  <span className="text-slate-500 text-[10px] font-black mr-1 uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
+                              <div className="flex flex-col items-stretch">
+                                <div className="flex items-center gap-2">
+                                  <span className="shrink-0 text-slate-500 text-[10px] font-black uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
                                   <Input
                                     name={`quote-price-${item.product.producto_id}`}
                                     type="number"
                                     min="0"
                                     step="0.01"
                                     inputMode="decimal"
-                                    className="h-10 w-28 text-right px-3 font-black text-[14px] border-slate-200 focus:border-blue-500"
+                                    className="no-number-spinner h-11 min-w-0 flex-1 text-right px-3 font-black text-[15px] border-slate-200 focus:border-blue-500"
                                     value={(currency === 'USD' ? item.unitPriceMxn / exchangeRate : item.unitPriceMxn).toFixed(2)}
                                     onChange={(e) => {
                                       const val = parseFloat(e.target.value) || 0;
@@ -1477,7 +1477,7 @@ export default function App() {
                                     }}
                                   />
                                 </div>
-                                <span className="mt-1 text-[10px] font-bold text-slate-500">
+                                <span className="mt-1 text-right text-[10px] font-bold text-slate-500">
                                   Importe: {(currency === 'USD' ? (item.unitPriceMxn * item.quantity) / exchangeRate : item.unitPriceMxn * item.quantity).toLocaleString('es-MX', { style: 'currency', currency })}
                                 </span>
                               </div>
