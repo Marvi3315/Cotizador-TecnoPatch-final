@@ -58,6 +58,7 @@ export default function App() {
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [cloudStatus, setCloudStatus] = useState(firebaseReady ? 'Conectando Firebase...' : 'Firebase sin configurar');
   const [quoteStatus, setQuoteStatus] = useState<'Borrador' | 'Enviada' | 'Seguimiento' | 'Aceptada' | 'Rechazada'>('Borrador');
+  const [selectedFollowQuoteId, setSelectedFollowQuoteId] = useState('');
   const [salesRep, setSalesRep] = useState('TecnoPatch Ventas');
   const [validityDays, setValidityDays] = useState(15);
   const [advancePercent, setAdvancePercent] = useState(60);
@@ -107,6 +108,8 @@ export default function App() {
   const activeClients = clients.filter(client => client.status !== 'Pausado');
   const todayIso = new Date().toLocaleDateString('en-CA');
   const todayMeetings = meetings.filter(meeting => meeting.date === todayIso);
+  const quoteStages = ['Borrador', 'Enviada', 'Seguimiento', 'Aceptada', 'Rechazada'] as const;
+  const selectedFollowQuote = quoteHistory.find(quote => quote.id === selectedFollowQuoteId);
   const moduleTabs = [
     { id: 'cotizador', label: 'Cotizador', icon: ShoppingCart },
     { id: 'clientes', label: 'Clientes', icon: Users },
@@ -650,6 +653,40 @@ export default function App() {
     toast.info('Quote restored from history');
   };
 
+  const selectQuoteForFollowUp = (quote: QuoteHistoryItem) => {
+    setSelectedFollowQuoteId(quote.id);
+    setQuoteStatus(quote.quoteStatus || 'Borrador');
+    setSalesRep(quote.salesRep || 'TecnoPatch Ventas');
+    setValidityDays(quote.validityDays || 15);
+    setAdvancePercent(quote.advancePercent || 60);
+    setPaymentTerms(quote.paymentTerms || '60% anticipo, 40% contra entrega');
+  };
+
+  const updateQuoteStatus = async () => {
+    if (!selectedFollowQuote) {
+      toast.error('Selecciona una cotizacion para actualizar su etapa');
+      return;
+    }
+
+    try {
+      setCloudStatus('Guardando Firebase...');
+      await saveSharedQuote({
+        ...selectedFollowQuote,
+        quoteStatus,
+        salesRep,
+        validityDays,
+        advancePercent,
+        paymentTerms
+      });
+      setCloudStatus('Firebase guardado');
+      toast.success(`Cotizacion movida a ${quoteStatus}`);
+    } catch (error) {
+      console.error('Error updating quote status:', error);
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo actualizar la cotizacion: ${formatCloudError(error)}`);
+    }
+  };
+
   return (
     <>
       {!appReady ? (
@@ -916,7 +953,16 @@ export default function App() {
                         <p className="font-bold">No hay cotizaciones registradas.</p>
                       </div>
                     ) : (
-                      quoteHistory.map(hist => (
+                      quoteHistory.map(hist => {
+                        const clientLabel = hist.clientCompany || hist.clientName || 'Sin cliente asignado';
+                        const itemPreview = hist.items
+                          .slice(0, 3)
+                          .map(item => `${item.quantity}x ${item.product.titulo || item.product.modelo || 'Partida'}`)
+                          .join(' · ');
+                        const syscomCount = hist.items.filter(item => !item.product.isManual).length;
+                        const manualCount = hist.items.filter(item => item.product.isManual).length;
+
+                        return (
                         <div key={hist.id} className="relative group">
                           <Card
                             className="cursor-pointer hover:border-blue-500 hover:ring-4 hover:ring-blue-50/50 transition-all border-slate-200 shadow-sm"
@@ -926,10 +972,17 @@ export default function App() {
                               <div className="flex-1 pr-4">
                                 <div className="flex items-center gap-2 mb-1">
                                   <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100 text-[10px] font-black uppercase">
-                                    #{hist.id.toUpperCase()}
+                                    {(hist as any).quoteNumber || `#${hist.id.toUpperCase()}`}
                                   </Badge>
+                                  <Badge className="bg-slate-900 text-white border-slate-900 text-[9px] h-5">{hist.quoteStatus || 'Borrador'}</Badge>
                                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{hist.date}</span>
                                   <Badge variant="secondary" className="text-[8px] h-4">{hist.currency}</Badge>
+                                </div>
+                                <div className="font-black text-slate-900 text-base leading-tight line-clamp-1">
+                                  {clientLabel}
+                                </div>
+                                <div className="mt-1 text-[11px] text-slate-500 font-semibold">
+                                  {hist.projectType || 'Proyecto'}{hist.salesRep ? ` · ${hist.salesRep}` : ''}
                                 </div>
                                 <div className="font-black text-slate-900 text-lg">
                                   {hist.total.toLocaleString('es-MX', { style: 'currency', currency: hist.currency || 'MXN' })}
@@ -948,13 +1001,23 @@ export default function App() {
                               </div>
                             </CardHeader>
                             <CardContent className="py-3 px-5 bg-slate-50/30 group-hover:bg-white transition-colors">
-                              <p className="text-xs text-slate-500 font-medium leading-relaxed break-words">
-                                {hist.items.map(i => `${i.quantity}x ${i.product.modelo}`).join(', ')}
+                              <div className="mb-2 flex flex-wrap gap-2">
+                                <Badge variant="secondary" className="text-[10px]">{hist.items.length} partidas</Badge>
+                                <Badge variant="secondary" className="text-[10px]">{syscomCount} Syscom</Badge>
+                                <Badge variant="secondary" className="text-[10px]">{manualCount} manuales</Badge>
+                              </div>
+                              <p className="text-xs text-slate-500 font-medium leading-relaxed break-words line-clamp-3">
+                                {itemPreview || 'Sin partidas'}
+                                {hist.items.length > 3 ? ` · +${hist.items.length - 3} mas` : ''}
                               </p>
+                              {hist.projectScope && (
+                                <p className="mt-2 text-[11px] text-slate-400 line-clamp-2">{hist.projectScope}</p>
+                              )}
                             </CardContent>
                           </Card>
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -1904,16 +1967,43 @@ export default function App() {
                 )}
 
                 {activeModule === 'seguimiento' && (
-                  <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-5">
+                  <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
                     <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
                       <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><ClipboardList size={20} className="text-blue-600" /> Venta Actual</h2>
                       <div className="mt-4 space-y-3">
+                        <select
+                          name="follow-quote"
+                          className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                          value={selectedFollowQuoteId}
+                          onChange={e => {
+                            const quote = quoteHistory.find(item => item.id === e.target.value);
+                            if (quote) selectQuoteForFollowUp(quote);
+                            else setSelectedFollowQuoteId('');
+                          }}
+                        >
+                          <option value="">Selecciona una cotizacion guardada</option>
+                          {quoteHistory.map(quote => (
+                            <option key={quote.id} value={quote.id}>
+                              {((quote as any).quoteNumber || quote.id.toUpperCase())} · {quote.clientCompany || quote.clientName || 'Sin cliente'} · {quote.total.toLocaleString('es-MX', { style: 'currency', currency: quote.currency || 'MXN' })}
+                            </option>
+                          ))}
+                        </select>
+                        {selectedFollowQuote && (
+                          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">{(selectedFollowQuote as any).quoteNumber || selectedFollowQuote.id.toUpperCase()}</p>
+                                <p className="mt-1 font-black text-slate-900">{selectedFollowQuote.clientCompany || selectedFollowQuote.clientName || 'Sin cliente'}</p>
+                                <p className="text-xs text-slate-500">{selectedFollowQuote.items.length} partidas · {selectedFollowQuote.date}</p>
+                              </div>
+                              <p className="font-black text-blue-700">
+                                {selectedFollowQuote.total.toLocaleString('es-MX', { style: 'currency', currency: selectedFollowQuote.currency || 'MXN' })}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                         <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={quoteStatus} onChange={e => setQuoteStatus(e.target.value as typeof quoteStatus)}>
-                          <option>Borrador</option>
-                          <option>Enviada</option>
-                          <option>Seguimiento</option>
-                          <option>Aceptada</option>
-                          <option>Rechazada</option>
+                          {quoteStages.map(status => <option key={status}>{status}</option>)}
                         </select>
                         <Input placeholder="Vendedor responsable" value={salesRep} onChange={e => setSalesRep(e.target.value)} />
                         <div className="grid grid-cols-2 gap-2">
@@ -1921,25 +2011,32 @@ export default function App() {
                           <Input type="number" placeholder="Anticipo %" value={advancePercent} onChange={e => setAdvancePercent(parseInt(e.target.value) || 0)} />
                         </div>
                         <Input placeholder="Condiciones de pago" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} />
-                        <Button onClick={() => setActiveModule('cotizador')} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black">Volver al Cotizador</Button>
+                        <Button onClick={updateQuoteStatus} disabled={!selectedFollowQuote} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">Actualizar Etapa</Button>
+                        <Button onClick={() => selectedFollowQuote ? restoreQuote(selectedFollowQuote) : setActiveModule('cotizador')} variant="outline" className="w-full font-black">
+                          {selectedFollowQuote ? 'Cargar al Cotizador' : 'Volver al Cotizador'}
+                        </Button>
                       </div>
                     </section>
 
                     <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {(['Borrador', 'Enviada', 'Seguimiento', 'Aceptada'] as const).map(status => (
+                      {quoteStages.map(status => (
                         <div key={status} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                             <h3 className="font-black text-slate-900">{status}</h3>
-                            <Badge variant="secondary">{quoteHistory.filter(q => (q as any).quoteStatus === status).length}</Badge>
+                            <Badge variant="secondary">{quoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).length}</Badge>
                           </div>
                           <div className="p-4 space-y-3">
                             {quoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).slice(0, 5).map(q => (
-                              <button key={q.id} onClick={() => restoreQuote(q)} className="w-full text-left rounded-lg border border-slate-100 p-3 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
+                              <button key={q.id} onClick={() => selectQuoteForFollowUp(q)} className={`w-full text-left rounded-lg border p-3 transition-colors ${selectedFollowQuoteId === q.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-100 hover:border-blue-200 hover:bg-blue-50/30'}`}>
                                 <div className="flex justify-between gap-3">
                                   <span className="font-black text-slate-900">{(q as any).quoteNumber || q.id.toUpperCase()}</span>
                                   <span className="font-black text-blue-600">{q.total.toLocaleString('es-MX', { style: 'currency', currency: q.currency || 'MXN' })}</span>
                                 </div>
                                 <p className="mt-1 text-xs text-slate-500">{q.clientCompany || q.clientName || 'Sin cliente'} · {q.date}</p>
+                                <p className="mt-2 text-[11px] text-slate-400 line-clamp-2">
+                                  {q.items.slice(0, 2).map(item => item.product.titulo || item.product.modelo).join(' · ')}
+                                  {q.items.length > 2 ? ` · +${q.items.length - 2} mas` : ''}
+                                </p>
                               </button>
                             ))}
                             {quoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).length === 0 && (
