@@ -2197,29 +2197,62 @@ export default function App() {
                         )}
                       </div>
                       <div className="mt-4 space-y-3">
-                        <Input name="crm-client-name" placeholder="Nombre del contacto" value={newClient.name} onChange={e => setNewClient({ ...newClient, name: e.target.value })} />
-                        <Input name="crm-client-company" placeholder="Empresa / Negocio" value={newClient.company} onChange={e => setNewClient({ ...newClient, company: e.target.value })} />
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input name="crm-client-phone" placeholder="WhatsApp" value={newClient.phone} onChange={e => setNewClient({ ...newClient, phone: e.target.value })} />
-                          <Input name="crm-client-email" placeholder="Correo" value={newClient.email} onChange={e => setNewClient({ ...newClient, email: e.target.value })} />
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Nombre del contacto</label>
+                          <Input name="crm-client-name" placeholder="Ej. Jesus Hernandez" value={newClient.name} onChange={e => setNewClient({ ...newClient, name: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Empresa / cliente</label>
+                          <Input name="crm-client-company" placeholder="Ej. Departamentos Air&b" value={newClient.company} onChange={e => setNewClient({ ...newClient, company: e.target.value })} />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                          <Input name="crm-client-rfc" placeholder="RFC" value={newClient.rfc} onChange={e => setNewClient({ ...newClient, rfc: e.target.value.toUpperCase() })} />
-                          <Input name="crm-client-role" placeholder="Contacto / Cargo" value={newClient.contactRole} onChange={e => setNewClient({ ...newClient, contactRole: e.target.value })} />
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">WhatsApp / telefono</label>
+                            <Input name="crm-client-phone" placeholder="33 0000 0000" value={newClient.phone} onChange={e => setNewClient({ ...newClient, phone: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Correo</label>
+                            <Input name="crm-client-email" placeholder="correo@empresa.com" value={newClient.email} onChange={e => setNewClient({ ...newClient, email: e.target.value })} />
+                          </div>
                         </div>
-                        <Input name="crm-client-address" placeholder="Direccion del proyecto" value={newClient.address} onChange={e => setNewClient({ ...newClient, address: e.target.value })} />
                         <div className="grid grid-cols-2 gap-2">
-                          <select name="crm-client-status" className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={newClient.status} onChange={e => setNewClient({ ...newClient, status: e.target.value as ClientRecord['status'] })}>
-                            <option>Prospecto</option>
-                            <option>Cotizado</option>
-                            <option>Seguimiento</option>
-                            <option>Cliente</option>
-                            <option>Pausado</option>
-                          </select>
-                          <Input name="crm-client-owner" placeholder="Vendedor" value={newClient.owner} onChange={e => setNewClient({ ...newClient, owner: e.target.value })} />
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">RFC</label>
+                            <Input name="crm-client-rfc" placeholder="Opcional" value={newClient.rfc} onChange={e => setNewClient({ ...newClient, rfc: e.target.value.toUpperCase() })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Cargo / area</label>
+                            <Input name="crm-client-role" placeholder="Ej. Administracion" value={newClient.contactRole} onChange={e => setNewClient({ ...newClient, contactRole: e.target.value })} />
+                          </div>
                         </div>
-                        <Input name="crm-client-source" placeholder="Origen: WhatsApp, referido, web..." value={newClient.source} onChange={e => setNewClient({ ...newClient, source: e.target.value })} />
-                        <textarea name="crm-client-notes" className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Notas internas" value={newClient.notes} onChange={e => setNewClient({ ...newClient, notes: e.target.value })} />
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Direccion del proyecto</label>
+                          <Input name="crm-client-address" placeholder="Calle, colonia, ciudad o referencia" value={newClient.address} onChange={e => setNewClient({ ...newClient, address: e.target.value })} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Estado del cliente</label>
+                            <select name="crm-client-status" className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={newClient.status} onChange={e => setNewClient({ ...newClient, status: e.target.value as ClientRecord['status'] })}>
+                              <option>Prospecto</option>
+                              <option>Cotizado</option>
+                              <option>Seguimiento</option>
+                              <option>Cliente</option>
+                              <option>Pausado</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Responsable / vendedor</label>
+                            <Input name="crm-client-owner" placeholder="Ej. Raul, Larissa, Ivan" value={newClient.owner} onChange={e => setNewClient({ ...newClient, owner: e.target.value })} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Origen del contacto</label>
+                          <Input name="crm-client-source" placeholder="WhatsApp, referido, web, visita..." value={newClient.source} onChange={e => setNewClient({ ...newClient, source: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Notas internas</label>
+                          <textarea name="crm-client-notes" className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Pendientes, contexto del cliente, horarios, preferencias..." value={newClient.notes} onChange={e => setNewClient({ ...newClient, notes: e.target.value })} />
+                        </div>
                         <Button onClick={createClient} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">
                           {editingClientId ? <Save size={16} className="mr-2" /> : <UserPlus size={16} className="mr-2" />}
                           {editingClientId ? 'Actualizar Cliente' : 'Guardar Cliente'}
