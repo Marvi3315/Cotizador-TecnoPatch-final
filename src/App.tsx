@@ -1726,35 +1726,41 @@ export default function App() {
                                   <FileText className="w-6 h-6 text-blue-500" />
                                 ) : <ImageIcon className="w-full h-full text-slate-300" />}
                               </div>
-                              <div className="flex-1 pr-6 space-y-2">
-                                <Input
-                                  name={`quote-title-${item.product.producto_id}`}
-                                  className="h-10 px-2 text-[12px] font-bold text-slate-900"
-                                  value={item.product.titulo}
-                                  onChange={e => updateItemProductField(item.product.producto_id, { titulo: e.target.value })}
-                                />
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div>
-                                    <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Categoria</label>
-                                    <Input
-                                      name={`quote-category-${item.product.producto_id}`}
-                                      className="h-9 px-2 text-[11px] font-bold uppercase"
-                                      value={item.product.isManual ? (item.product.manualCategory || 'Manual') : item.product.modelo}
-                                      onChange={e => updateItemProductField(item.product.producto_id, item.product.isManual ? { manualCategory: e.target.value } : { manualCategory: e.target.value })}
-                                      readOnly={!item.product.isManual}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Unidad</label>
-                                    <Input
-                                      name={`quote-unit-${item.product.producto_id}`}
-                                      className="h-9 px-2 text-[11px] font-bold"
-                                      value={item.product.unit || 'pz'}
-                                      onChange={e => updateItemProductField(item.product.producto_id, { unit: e.target.value })}
-                                    />
+                              {item.product.isManual ? (
+                                <div className="flex-1 pr-6 space-y-2">
+                                  <Input
+                                    name={`quote-title-${item.product.producto_id}`}
+                                    className="h-10 px-2 text-[12px] font-bold text-slate-900"
+                                    value={item.product.titulo}
+                                    onChange={e => updateItemProductField(item.product.producto_id, { titulo: e.target.value })}
+                                  />
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Categoria</label>
+                                      <Input
+                                        name={`quote-category-${item.product.producto_id}`}
+                                        className="h-9 px-2 text-[11px] font-bold uppercase"
+                                        value={item.product.manualCategory || 'Manual'}
+                                        onChange={e => updateItemProductField(item.product.producto_id, { manualCategory: e.target.value })}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Unidad</label>
+                                      <Input
+                                        name={`quote-unit-${item.product.producto_id}`}
+                                        className="h-9 px-2 text-[11px] font-bold"
+                                        value={item.product.unit || 'pz'}
+                                        onChange={e => updateItemProductField(item.product.producto_id, { unit: e.target.value })}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
+                              ) : (
+                                <div className="flex-1 pr-6">
+                                  <div className="text-[12px] font-medium text-slate-900 line-clamp-2 leading-snug">{item.product.titulo}</div>
+                                  <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold">{item.product.modelo}</div>
+                                </div>
+                              )}
                             </div>
 
                             <div className="mt-3 grid grid-cols-1 gap-3 border-t pt-3">
@@ -1777,22 +1783,29 @@ export default function App() {
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div className="flex flex-col items-stretch">
                                   <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Costo base</label>
-                                  <div className="flex items-center gap-2">
-                                    <span className="shrink-0 text-slate-500 text-[10px] font-black uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
-                                    <Input
-                                      name={`quote-cost-${item.product.producto_id}`}
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      inputMode="decimal"
-                                      className="no-number-spinner h-11 min-w-0 flex-1 text-right px-3 font-black text-[15px] border-slate-200 focus:border-blue-500"
-                                      value={costoDisplay.toFixed(2)}
-                                      onChange={(e) => {
-                                        const val = parseFloat(e.target.value) || 0;
-                                        updateItemCost(item.product.producto_id, currency === 'USD' ? val * exchangeRate : val);
-                                      }}
-                                    />
-                                  </div>
+                                  {item.product.isManual ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="shrink-0 text-slate-500 text-[10px] font-black uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
+                                      <Input
+                                        name={`quote-cost-${item.product.producto_id}`}
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        inputMode="decimal"
+                                        className="no-number-spinner h-11 min-w-0 flex-1 text-right px-3 font-black text-[15px] border-slate-200 focus:border-blue-500"
+                                        value={costoDisplay.toFixed(2)}
+                                        onChange={(e) => {
+                                          const val = parseFloat(e.target.value) || 0;
+                                          updateItemCost(item.product.producto_id, currency === 'USD' ? val * exchangeRate : val);
+                                        }}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="flex h-11 items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3">
+                                      <span className="text-[10px] font-black uppercase tracking-tighter text-slate-500">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
+                                      <span className="text-[15px] font-black text-slate-700">{costoDisplay.toFixed(2)}</span>
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex flex-col items-stretch">
                                   <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Precio venta</label>
