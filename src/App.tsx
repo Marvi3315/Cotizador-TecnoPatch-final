@@ -1178,10 +1178,10 @@ export default function App() {
                           Plataforma Profesional de Cotizacion
                         </div>
                         <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4 tracking-tighter leading-tight">
-                          Crea cotizaciones <span className="text-blue-600">profesionales</span> en segundos.
+                          Arma propuestas TecnoPatch <span className="text-blue-600">con precios reales</span>.
                         </h1>
                         <p className="text-slate-500 text-lg max-w-lg mx-auto leading-relaxed">
-                          Accede al catalogo completo de Syscom, gestiona margenes y genera documentos PDF con tu propia marca.
+                          Busca equipo Syscom, agrega materiales y mano de obra, ajusta margenes y deja la cotizacion lista para enviar o imprimir.
                         </p>
                       </div>
 
@@ -1909,53 +1909,37 @@ export default function App() {
             </main>
             ) : (
               <main className="flex-1 max-w-[2000px] w-full mx-auto overflow-y-auto bg-slate-50 p-3 md:p-6 custom-scrollbar">
-                <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h1 className="text-xl font-black text-slate-900">Centro Comercial TecnoPatch</h1>
-                    <p className="text-sm text-slate-500">Clientes, citas, cotizaciones y seguimientos en una sola vista.</p>
+                {activeModule !== 'inicio' && (
+                  <div className="mb-5 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div>
+                        <h1 className="text-base font-black text-slate-900">
+                          {activeModule === 'clientes' && 'Clientes'}
+                          {activeModule === 'citas' && 'Agenda Comercial'}
+                          {activeModule === 'seguimiento' && 'Seguimiento de Cotizaciones'}
+                        </h1>
+                        <p className="text-xs text-slate-500">Busqueda y resumen rapido del flujo comercial.</p>
+                      </div>
+                      <div className="relative w-full xl:max-w-md">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          name="crm-global-search"
+                          className="h-9 pl-9 text-sm"
+                          placeholder="Buscar cliente, folio, telefono, vendedor, estado o producto..."
+                          value={globalCrmSearch}
+                          onChange={e => setGlobalCrmSearch(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-black">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Clientes: {activeClients.length}</span>
+                      <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">Citas pendientes: {pendingMeetings.length}</span>
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">Hoy: {todayMeetings.length}</span>
+                      <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">Pipeline: {openPipelineTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</span>
+                      <span className="rounded-full bg-red-50 px-3 py-1 text-red-600">Atrasados: {overdueFollowUps.length}</span>
+                    </div>
                   </div>
-                  <div className="relative w-full lg:max-w-md">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      name="crm-global-search"
-                      className="h-11 pl-9 text-sm"
-                      placeholder="Buscar cliente, folio, telefono, vendedor, estado o producto..."
-                      value={globalCrmSearch}
-                      onChange={e => setGlobalCrmSearch(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><Users size={14} /> Clientes activos</div>
-                    <div className="mt-2 text-2xl font-black text-slate-900">{activeClients.length}</div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><CalendarDays size={14} /> Citas pendientes</div>
-                    <div className="mt-2 text-2xl font-black text-blue-600">{pendingMeetings.length}</div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><Clock3 size={14} /> Hoy</div>
-                    <div className="mt-2 text-2xl font-black text-emerald-600">{todayMeetings.length}</div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><FileText size={14} /> Cotizado</div>
-                    <div className="mt-2 text-xl font-black text-slate-900">{pipelineTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><ClipboardList size={14} /> Pipeline</div>
-                    <div className="mt-2 text-xl font-black text-blue-600">{openPipelineTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><CheckCircle2 size={14} /> Aceptado</div>
-                    <div className="mt-2 text-xl font-black text-emerald-600">{acceptedTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><Clock3 size={14} /> Atrasados</div>
-                    <div className="mt-2 text-2xl font-black text-red-500">{overdueFollowUps.length}</div>
-                  </div>
-                </div>
+                )}
 
                 {activeModule === 'inicio' && (
                   <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-5">
