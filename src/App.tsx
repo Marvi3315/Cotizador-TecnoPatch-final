@@ -269,6 +269,12 @@ export default function App() {
     return () => leftSectionRef.current?.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    const dismissToasts = () => toast.dismiss();
+    document.addEventListener('pointerdown', dismissToasts);
+    return () => document.removeEventListener('pointerdown', dismissToasts);
+  }, []);
+
 
   // Lock body scroll when mobile cart is open
   useEffect(() => {
@@ -651,6 +657,37 @@ export default function App() {
     );
   };
 
+  const updateItemCost = (id: string, newCostMxn: number) => {
+    const safeCostUsd = (Number.isFinite(newCostMxn) ? Math.max(0, newCostMxn) : 0) / exchangeRate;
+    setQuoteItems(current =>
+      current.map(item => {
+        if (item.product.producto_id === id) {
+          return {
+            ...item,
+            product: {
+              ...item.product,
+              precios: {
+                ...item.product.precios,
+                precio_descuento: safeCostUsd.toString()
+              }
+            }
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const updateItemProductField = (id: string, updates: Partial<Pick<Product, 'titulo' | 'manualCategory' | 'unit'>>) => {
+    setQuoteItems(current =>
+      current.map(item =>
+        item.product.producto_id === id
+          ? { ...item, product: { ...item.product, ...updates } }
+          : item
+      )
+    );
+  };
+
   const removeItem = (id: string) => {
     setQuoteItems(current => current.filter(item => item.product.producto_id !== id));
   };
@@ -848,7 +885,7 @@ export default function App() {
       ) : (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900 animate-in fade-in duration-500">
           <div className="print:hidden flex flex-col min-h-screen">
-            <Toaster position="top-right" richColors />
+            <Toaster position="top-center" richColors duration={2500} closeButton={false} />
 
             {/* STICKY ACCESSIBILITY HEADER */}
             <div className={`fixed top-0 left-0 right-0 z-50 bg-slate-900 text-white shadow-2xl transition-all duration-300 transform ${scrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'}`}>
@@ -1081,14 +1118,14 @@ export default function App() {
 
             {/* History Dialog */}
             <Dialog open={showHistory} onOpenChange={setShowHistory}>
-              <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-3xl border-none shadow-2xl">
-                <DialogHeader className="p-6 pb-2">
+              <DialogContent className="w-[calc(100vw-1.5rem)] max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-3xl border-none shadow-2xl">
+                <DialogHeader className="p-5 sm:p-6 pb-2 pr-12">
                   <DialogTitle className="text-2xl font-black tracking-tight">Historial de Cotizaciones</DialogTitle>
                   <DialogDescription className="text-slate-500 font-medium">
                     Gestiona y restaura tus cotizaciones previas.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6 custom-scrollbar">
                   <Input
                     name="history-search"
                     className="mb-3 h-10"
@@ -1118,9 +1155,9 @@ export default function App() {
                             className="cursor-pointer hover:border-blue-500 hover:ring-4 hover:ring-blue-50/50 transition-all border-slate-200 shadow-sm"
                             onClick={() => restoreQuote(hist)}
                           >
-                            <CardHeader className="py-4 px-5 flex flex-row items-start justify-between bg-white border-b border-slate-50 transition-colors group-hover:bg-blue-50/20">
-                              <div className="flex-1 pr-4">
-                                <div className="flex items-center gap-2 mb-1">
+                            <CardHeader className="py-4 px-4 sm:px-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 bg-white border-b border-slate-50 transition-colors group-hover:bg-blue-50/20">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
                                   <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100 text-[10px] font-black uppercase">
                                     {(hist as any).quoteNumber || `#${hist.id.toUpperCase()}`}
                                   </Badge>
@@ -1138,10 +1175,11 @@ export default function App() {
                                   {hist.total.toLocaleString('es-MX', { style: 'currency', currency: hist.currency || 'MXN' })}
                                 </div>
                               </div>
-                              <div className="flex flex-col items-end gap-2">
+                              <div className="flex shrink-0 flex-row sm:flex-col items-center sm:items-end gap-2 self-end sm:self-start">
                                 <Button
                                   variant="ghost"
                                   size="icon"
+                                  title="Eliminar cotizacion"
                                   className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
                                   onClick={(e) => deleteFromHistory(e, hist.id)}
                                 >
@@ -1673,6 +1711,8 @@ export default function App() {
                     <div className="space-y-3">
                       {quoteItems.map(item => {
                         const costoBase = (parseFloat(item.product.precios.precio_descuento) || 0) * exchangeRate;
+                        const costoDisplay = currency === 'USD' ? costoBase / exchangeRate : costoBase;
+                        const precioDisplay = currency === 'USD' ? item.unitPriceMxn / exchangeRate : item.unitPriceMxn;
                         const ganancia = item.unitPriceMxn - costoBase;
                         const gananciaPorcentaje = costoBase > 0 ? (ganancia / costoBase) * 100 : 0;
 
@@ -1686,15 +1726,39 @@ export default function App() {
                                   <FileText className="w-6 h-6 text-blue-500" />
                                 ) : <ImageIcon className="w-full h-full text-slate-300" />}
                               </div>
-                              <div className="flex-1 pr-6">
-                                <div className="text-[12px] font-medium text-slate-900 line-clamp-2 leading-snug">{item.product.titulo}</div>
-                                <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold">
-                                  {item.product.isManual ? `${item.product.manualCategory || 'Manual'}${item.product.unit ? ` / ${item.product.unit}` : ''}` : item.product.modelo}
+                              <div className="flex-1 pr-6 space-y-2">
+                                <Input
+                                  name={`quote-title-${item.product.producto_id}`}
+                                  className="h-10 px-2 text-[12px] font-bold text-slate-900"
+                                  value={item.product.titulo}
+                                  onChange={e => updateItemProductField(item.product.producto_id, { titulo: e.target.value })}
+                                />
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Categoria</label>
+                                    <Input
+                                      name={`quote-category-${item.product.producto_id}`}
+                                      className="h-9 px-2 text-[11px] font-bold uppercase"
+                                      value={item.product.isManual ? (item.product.manualCategory || 'Manual') : item.product.modelo}
+                                      onChange={e => updateItemProductField(item.product.producto_id, item.product.isManual ? { manualCategory: e.target.value } : { manualCategory: e.target.value })}
+                                      readOnly={!item.product.isManual}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Unidad</label>
+                                    <Input
+                                      name={`quote-unit-${item.product.producto_id}`}
+                                      className="h-9 px-2 text-[11px] font-bold"
+                                      value={item.product.unit || 'pz'}
+                                      onChange={e => updateItemProductField(item.product.producto_id, { unit: e.target.value })}
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             </div>
 
                             <div className="mt-3 grid grid-cols-1 gap-3 border-t pt-3">
+                              <label className="mb-[-8px] block text-[9px] font-black uppercase tracking-widest text-slate-400">Cantidad</label>
                               <div className="grid w-full grid-cols-[44px_minmax(96px,1fr)_44px] overflow-hidden rounded-lg border border-slate-200 bg-white">
                                 <button onClick={() => updateQuantity(item.product.producto_id, -1)} className="flex h-11 items-center justify-center hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Minus size={16} /></button>
                                 <Input
@@ -1710,7 +1774,28 @@ export default function App() {
                                 <button onClick={() => updateQuantity(item.product.producto_id, 1)} className="flex h-11 items-center justify-center hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Plus size={16} /></button>
                               </div>
 
-                              <div className="flex flex-col items-stretch">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div className="flex flex-col items-stretch">
+                                  <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Costo base</label>
+                                  <div className="flex items-center gap-2">
+                                    <span className="shrink-0 text-slate-500 text-[10px] font-black uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
+                                    <Input
+                                      name={`quote-cost-${item.product.producto_id}`}
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      inputMode="decimal"
+                                      className="no-number-spinner h-11 min-w-0 flex-1 text-right px-3 font-black text-[15px] border-slate-200 focus:border-blue-500"
+                                      value={costoDisplay.toFixed(2)}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        updateItemCost(item.product.producto_id, currency === 'USD' ? val * exchangeRate : val);
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-stretch">
+                                  <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Precio venta</label>
                                 <div className="flex items-center gap-2">
                                   <span className="shrink-0 text-slate-500 text-[10px] font-black uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
                                   <Input
@@ -1720,30 +1805,25 @@ export default function App() {
                                     step="0.01"
                                     inputMode="decimal"
                                     className="no-number-spinner h-11 min-w-0 flex-1 text-right px-3 font-black text-[15px] border-slate-200 focus:border-blue-500"
-                                    value={(currency === 'USD' ? item.unitPriceMxn / exchangeRate : item.unitPriceMxn).toFixed(2)}
+                                    value={precioDisplay.toFixed(2)}
                                     onChange={(e) => {
                                       const val = parseFloat(e.target.value) || 0;
                                       updateItemPrice(item.product.producto_id, currency === 'USD' ? val * exchangeRate : val);
                                     }}
                                   />
                                 </div>
+                                </div>
+                              </div>
                                 <span className="mt-1 text-right text-[10px] font-bold text-slate-500">
                                   Importe: {(currency === 'USD' ? (item.unitPriceMxn * item.quantity) / exchangeRate : item.unitPriceMxn * item.quantity).toLocaleString('es-MX', { style: 'currency', currency })}
                                 </span>
-                              </div>
                             </div>
 
                             {/* MATH SECTION - GANANCIA */}
-                            {item.product.isManual ? (
-                              <div className="mt-3 bg-blue-50 rounded p-2 text-[10px] flex justify-between border border-blue-100 items-center">
-                                <span className="text-blue-700 font-bold uppercase tracking-wider">Partida manual</span>
-                                <span className="text-blue-500">{item.product.manualCategory}</span>
-                              </div>
-                            ) : (
-                              <div className="mt-3 bg-slate-50 rounded p-2 text-[10px] flex justify-between border border-slate-100 items-center">
+                            <div className="mt-3 bg-slate-50 rounded p-2 text-[10px] flex justify-between border border-slate-100 items-center gap-2">
                                 <div className="text-slate-500">
-                                  Costo Base: <span className="font-bold text-slate-700">
-                                    {formatPrice(parseFloat(item.product.precios.precio_descuento))}
+                                  {item.product.isManual ? 'Partida manual' : 'Syscom'}: <span className="font-bold text-slate-700">
+                                    {item.product.isManual ? (item.product.manualCategory || 'Manual') : formatPrice(parseFloat(item.product.precios.precio_descuento))}
                                   </span>
                                 </div>
                                 <div className="text-slate-400">|</div>
@@ -1753,7 +1833,6 @@ export default function App() {
                                   </span> ({gananciaPorcentaje.toFixed(1)}%)
                                 </div>
                               </div>
-                            )}
 
                             <button
                               onClick={() => removeItem(item.product.producto_id)}
