@@ -63,6 +63,10 @@ export default function App() {
   const [validityDays, setValidityDays] = useState(15);
   const [advancePercent, setAdvancePercent] = useState(60);
   const [paymentTerms, setPaymentTerms] = useState('60% anticipo, 40% contra entrega');
+  const [nextFollowUpDate, setNextFollowUpDate] = useState('');
+  const [followUpNote, setFollowUpNote] = useState('');
+  const [lostReason, setLostReason] = useState('');
+  const [globalCrmSearch, setGlobalCrmSearch] = useState('');
   const [newClient, setNewClient] = useState({
     name: '',
     company: '',
@@ -110,6 +114,41 @@ export default function App() {
   const todayMeetings = meetings.filter(meeting => meeting.date === todayIso);
   const quoteStages = ['Borrador', 'Enviada', 'Seguimiento', 'Aceptada', 'Rechazada'] as const;
   const selectedFollowQuote = quoteHistory.find(quote => quote.id === selectedFollowQuoteId);
+  const acceptedTotal = quoteHistory
+    .filter(quote => quote.quoteStatus === 'Aceptada')
+    .reduce((acc, quote) => acc + (quote.total || 0), 0);
+  const openPipelineTotal = quoteHistory
+    .filter(quote => !['Aceptada', 'Rechazada'].includes(quote.quoteStatus || 'Borrador'))
+    .reduce((acc, quote) => acc + (quote.total || 0), 0);
+  const overdueFollowUps = quoteHistory.filter(quote =>
+    quote.nextFollowUpDate &&
+    quote.nextFollowUpDate < todayIso &&
+    !['Aceptada', 'Rechazada'].includes(quote.quoteStatus || 'Borrador')
+  );
+  const crmSearch = globalCrmSearch.trim().toLowerCase();
+  const matchesCrmSearch = (...values: Array<string | number | undefined>) =>
+    !crmSearch || values.some(value => String(value || '').toLowerCase().includes(crmSearch));
+  const filteredClients = clients.filter(client =>
+    matchesCrmSearch(client.name, client.company, client.phone, client.email, client.owner, client.status, client.notes)
+  );
+  const filteredMeetings = meetings.filter(meeting =>
+    matchesCrmSearch(meeting.title, meeting.clientName, meeting.owner, meeting.type, meeting.status, meeting.notes, meeting.location)
+  );
+  const filteredQuoteHistory = quoteHistory.filter(quote =>
+    matchesCrmSearch(
+      quote.quoteNumber,
+      quote.id,
+      quote.clientName,
+      quote.clientCompany,
+      quote.clientPhone,
+      quote.salesRep,
+      quote.projectType,
+      quote.quoteStatus,
+      quote.followUpNote,
+      quote.lostReason,
+      ...quote.items.map(item => `${item.product.titulo} ${item.product.modelo} ${item.product.marca}`)
+    )
+  );
   const moduleTabs = [
     { id: 'cotizador', label: 'Cotizador', icon: ShoppingCart },
     { id: 'clientes', label: 'Clientes', icon: Users },
@@ -600,6 +639,9 @@ export default function App() {
       validityDays,
       advancePercent,
       paymentTerms,
+      nextFollowUpDate,
+      followUpNote,
+      lostReason,
       savedAt: Date.now()
     };
 
@@ -649,6 +691,9 @@ export default function App() {
     setValidityDays(hist.validityDays || 15);
     setAdvancePercent(hist.advancePercent || 60);
     setPaymentTerms(hist.paymentTerms || '60% anticipo, 40% contra entrega');
+    setNextFollowUpDate(hist.nextFollowUpDate || '');
+    setFollowUpNote(hist.followUpNote || '');
+    setLostReason(hist.lostReason || '');
     setShowHistory(false);
     toast.info('Quote restored from history');
   };
@@ -660,6 +705,9 @@ export default function App() {
     setValidityDays(quote.validityDays || 15);
     setAdvancePercent(quote.advancePercent || 60);
     setPaymentTerms(quote.paymentTerms || '60% anticipo, 40% contra entrega');
+    setNextFollowUpDate(quote.nextFollowUpDate || '');
+    setFollowUpNote(quote.followUpNote || '');
+    setLostReason(quote.lostReason || '');
   };
 
   const updateQuoteStatus = async () => {
@@ -676,7 +724,10 @@ export default function App() {
         salesRep,
         validityDays,
         advancePercent,
-        paymentTerms
+        paymentTerms,
+        nextFollowUpDate,
+        followUpNote,
+        lostReason: quoteStatus === 'Rechazada' ? lostReason : ''
       });
       setCloudStatus('Firebase guardado');
       toast.success(`Cotizacion movida a ${quoteStatus}`);
@@ -946,14 +997,21 @@ export default function App() {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar">
+                  <Input
+                    name="history-search"
+                    className="mb-3 h-10"
+                    placeholder="Filtrar por cliente, folio, estado, vendedor o producto..."
+                    value={globalCrmSearch}
+                    onChange={e => setGlobalCrmSearch(e.target.value)}
+                  />
                   <div className="space-y-3 pt-2">
-                    {quoteHistory.length === 0 ? (
+                    {filteredQuoteHistory.length === 0 ? (
                       <div className="py-20 flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
                         <History size={48} className="mb-4 opacity-20" />
                         <p className="font-bold">No hay cotizaciones registradas.</p>
                       </div>
                     ) : (
-                      quoteHistory.map(hist => {
+                      filteredQuoteHistory.map(hist => {
                         const clientLabel = hist.clientCompany || hist.clientName || 'Sin cliente asignado';
                         const itemPreview = hist.items
                           .slice(0, 3)
@@ -1817,7 +1875,24 @@ export default function App() {
             </main>
             ) : (
               <main className="flex-1 max-w-[2000px] w-full mx-auto overflow-y-auto bg-slate-50 p-3 md:p-6 custom-scrollbar">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h1 className="text-xl font-black text-slate-900">Centro Comercial TecnoPatch</h1>
+                    <p className="text-sm text-slate-500">Clientes, citas, cotizaciones y seguimientos en una sola vista.</p>
+                  </div>
+                  <div className="relative w-full lg:max-w-md">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      name="crm-global-search"
+                      className="h-11 pl-9 text-sm"
+                      placeholder="Buscar cliente, folio, telefono, vendedor, estado o producto..."
+                      value={globalCrmSearch}
+                      onChange={e => setGlobalCrmSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
                   <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><Users size={14} /> Clientes activos</div>
                     <div className="mt-2 text-2xl font-black text-slate-900">{activeClients.length}</div>
@@ -1833,6 +1908,18 @@ export default function App() {
                   <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><FileText size={14} /> Cotizado</div>
                     <div className="mt-2 text-xl font-black text-slate-900">{pipelineTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</div>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><ClipboardList size={14} /> Pipeline</div>
+                    <div className="mt-2 text-xl font-black text-blue-600">{openPipelineTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</div>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><CheckCircle2 size={14} /> Aceptado</div>
+                    <div className="mt-2 text-xl font-black text-emerald-600">{acceptedTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</div>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black uppercase tracking-widest"><Clock3 size={14} /> Atrasados</div>
+                    <div className="mt-2 text-2xl font-black text-red-500">{overdueFollowUps.length}</div>
                   </div>
                 </div>
 
@@ -1871,12 +1958,25 @@ export default function App() {
                     <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                       <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                         <h2 className="text-lg font-black text-slate-900">Cartera de Clientes</h2>
-                        <Badge variant="secondary">{clients.length} registros</Badge>
+                        <Badge variant="secondary">{filteredClients.length} registros</Badge>
                       </div>
                       <div className="divide-y divide-slate-100">
-                        {clients.length === 0 ? (
+                        {filteredClients.length === 0 ? (
                           <div className="p-10 text-center text-slate-400 font-bold">Aun no hay clientes registrados.</div>
-                        ) : clients.map(client => (
+                        ) : filteredClients.map(client => {
+                          const clientQuotes = quoteHistory.filter(quote =>
+                            (quote.clientCompany && quote.clientCompany === client.company) ||
+                            (quote.clientName && quote.clientName === client.name) ||
+                            (quote.clientPhone && quote.clientPhone === client.phone)
+                          );
+                          const clientMeetings = meetings.filter(meeting =>
+                            meeting.clientId === client.id ||
+                            meeting.clientName === client.company ||
+                            meeting.clientName === client.name
+                          );
+                          const lastQuote = clientQuotes[0];
+
+                          return (
                           <div key={client.id} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50">
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
@@ -1891,13 +1991,29 @@ export default function App() {
                                 {client.contactRole && <span>{client.contactRole}</span>}
                                 {client.address && <span className="flex items-center gap-1"><MapPin size={12} /> {client.address}</span>}
                               </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Badge variant="secondary" className="text-[10px]">{clientQuotes.length} cotizaciones</Badge>
+                                <Badge variant="secondary" className="text-[10px]">{clientMeetings.length} citas</Badge>
+                                {lastQuote && (
+                                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 text-[10px]">
+                                    Ultima: {lastQuote.total.toLocaleString('es-MX', { style: 'currency', currency: lastQuote.currency || 'MXN' })}
+                                  </Badge>
+                                )}
+                              </div>
+                              {(lastQuote || clientMeetings[0]) && (
+                                <div className="mt-3 border-l-2 border-blue-100 pl-3 text-xs text-slate-500 space-y-1">
+                                  {lastQuote && <p><span className="font-bold text-slate-700">Cotizacion:</span> {(lastQuote as any).quoteNumber || lastQuote.id.toUpperCase()} · {lastQuote.quoteStatus || 'Borrador'}</p>}
+                                  {clientMeetings[0] && <p><span className="font-bold text-slate-700">Cita:</span> {clientMeetings[0].date} {clientMeetings[0].time} · {clientMeetings[0].status}</p>}
+                                </div>
+                              )}
                             </div>
                             <div className="flex gap-2">
                               <Button variant="outline" onClick={() => useClientInQuote(client)}>Usar en cotizacion</Button>
                               <Button variant="secondary" onClick={() => { setNewMeeting({ ...newMeeting, clientId: client.id, location: client.address, owner: client.owner }); setActiveModule('citas'); }}>Agendar</Button>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </section>
                   </div>
@@ -1936,12 +2052,12 @@ export default function App() {
                     <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                       <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                         <h2 className="text-lg font-black text-slate-900">Agenda Comercial</h2>
-                        <Badge variant="secondary">{meetings.length} citas</Badge>
+                        <Badge variant="secondary">{filteredMeetings.length} citas</Badge>
                       </div>
                       <div className="divide-y divide-slate-100">
-                        {meetings.length === 0 ? (
+                        {filteredMeetings.length === 0 ? (
                           <div className="p-10 text-center text-slate-400 font-bold">Sin citas programadas.</div>
-                        ) : meetings.map(meeting => (
+                        ) : filteredMeetings.map(meeting => (
                           <div key={meeting.id} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50">
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
@@ -1982,7 +2098,7 @@ export default function App() {
                           }}
                         >
                           <option value="">Selecciona una cotizacion guardada</option>
-                          {quoteHistory.map(quote => (
+                          {filteredQuoteHistory.map(quote => (
                             <option key={quote.id} value={quote.id}>
                               {((quote as any).quoteNumber || quote.id.toUpperCase())} · {quote.clientCompany || quote.clientName || 'Sin cliente'} · {quote.total.toLocaleString('es-MX', { style: 'currency', currency: quote.currency || 'MXN' })}
                             </option>
@@ -2011,6 +2127,37 @@ export default function App() {
                           <Input type="number" placeholder="Anticipo %" value={advancePercent} onChange={e => setAdvancePercent(parseInt(e.target.value) || 0)} />
                         </div>
                         <Input placeholder="Condiciones de pago" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} />
+                        <div className="grid grid-cols-1 gap-2">
+                          <Input
+                            name="follow-up-date"
+                            type="date"
+                            placeholder="Proximo seguimiento"
+                            value={nextFollowUpDate}
+                            onChange={e => setNextFollowUpDate(e.target.value)}
+                          />
+                          <textarea
+                            name="follow-up-note"
+                            className="w-full min-h-[78px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600"
+                            placeholder="Nota de seguimiento: llamar, reenviar propuesta, pendiente de anticipo..."
+                            value={followUpNote}
+                            onChange={e => setFollowUpNote(e.target.value)}
+                          />
+                          {quoteStatus === 'Rechazada' && (
+                            <select
+                              name="lost-reason"
+                              className="h-10 w-full rounded-md border border-red-100 bg-red-50 px-3 text-sm text-red-700"
+                              value={lostReason}
+                              onChange={e => setLostReason(e.target.value)}
+                            >
+                              <option value="">Motivo de rechazo</option>
+                              <option>Precio alto</option>
+                              <option>Eligio otro proveedor</option>
+                              <option>Proyecto pausado</option>
+                              <option>Sin respuesta</option>
+                              <option>Fuera de alcance</option>
+                            </select>
+                          )}
+                        </div>
                         <Button onClick={updateQuoteStatus} disabled={!selectedFollowQuote} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">Actualizar Etapa</Button>
                         <Button onClick={() => selectedFollowQuote ? restoreQuote(selectedFollowQuote) : setActiveModule('cotizador')} variant="outline" className="w-full font-black">
                           {selectedFollowQuote ? 'Cargar al Cotizador' : 'Volver al Cotizador'}
@@ -2023,23 +2170,30 @@ export default function App() {
                         <div key={status} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                             <h3 className="font-black text-slate-900">{status}</h3>
-                            <Badge variant="secondary">{quoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).length}</Badge>
+                            <Badge variant="secondary">{filteredQuoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).length}</Badge>
                           </div>
                           <div className="p-4 space-y-3">
-                            {quoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).slice(0, 5).map(q => (
+                            {filteredQuoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).slice(0, 8).map(q => (
                               <button key={q.id} onClick={() => selectQuoteForFollowUp(q)} className={`w-full text-left rounded-lg border p-3 transition-colors ${selectedFollowQuoteId === q.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-100 hover:border-blue-200 hover:bg-blue-50/30'}`}>
                                 <div className="flex justify-between gap-3">
                                   <span className="font-black text-slate-900">{(q as any).quoteNumber || q.id.toUpperCase()}</span>
                                   <span className="font-black text-blue-600">{q.total.toLocaleString('es-MX', { style: 'currency', currency: q.currency || 'MXN' })}</span>
                                 </div>
                                 <p className="mt-1 text-xs text-slate-500">{q.clientCompany || q.clientName || 'Sin cliente'} · {q.date}</p>
+                                {q.nextFollowUpDate && (
+                                  <p className={`mt-2 text-[11px] font-bold ${q.nextFollowUpDate < todayIso && !['Aceptada', 'Rechazada'].includes(q.quoteStatus || 'Borrador') ? 'text-red-500' : 'text-emerald-600'}`}>
+                                    Proximo contacto: {q.nextFollowUpDate}
+                                  </p>
+                                )}
                                 <p className="mt-2 text-[11px] text-slate-400 line-clamp-2">
                                   {q.items.slice(0, 2).map(item => item.product.titulo || item.product.modelo).join(' · ')}
                                   {q.items.length > 2 ? ` · +${q.items.length - 2} mas` : ''}
                                 </p>
+                                {q.followUpNote && <p className="mt-2 text-[11px] text-slate-500 line-clamp-2">{q.followUpNote}</p>}
+                                {q.lostReason && <Badge className="mt-2 bg-red-50 text-red-700 border-red-100">{q.lostReason}</Badge>}
                               </button>
                             ))}
-                            {quoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).length === 0 && (
+                            {filteredQuoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).length === 0 && (
                               <p className="text-sm text-slate-400 font-bold">Sin cotizaciones en esta etapa.</p>
                             )}
                           </div>

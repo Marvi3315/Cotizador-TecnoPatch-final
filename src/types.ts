@@ -57,6 +57,9 @@ export interface QuoteHistoryItem {
   validityDays?: number;
   advancePercent?: number;
   paymentTerms?: string;
+  nextFollowUpDate?: string;
+  followUpNote?: string;
+  lostReason?: string;
   savedAt?: number;
 }
 
