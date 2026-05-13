@@ -2051,27 +2051,51 @@ export default function App() {
                     <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
                       <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><CalendarDays size={20} className="text-blue-600" /> Nueva Cita</h2>
                       <div className="mt-4 space-y-3">
-                        <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={newMeeting.clientId} onChange={e => setNewMeeting({ ...newMeeting, clientId: e.target.value })}>
-                          <option value="">Cliente de cotizacion actual</option>
-                          {clients.map(client => <option key={client.id} value={client.id}>{client.company || client.name}</option>)}
-                        </select>
-                        <Input placeholder="Titulo de la cita" value={newMeeting.title} onChange={e => setNewMeeting({ ...newMeeting, title: e.target.value })} />
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input type="date" value={newMeeting.date} onChange={e => setNewMeeting({ ...newMeeting, date: e.target.value })} />
-                          <Input type="time" value={newMeeting.time} onChange={e => setNewMeeting({ ...newMeeting, time: e.target.value })} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <select className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={newMeeting.type} onChange={e => setNewMeeting({ ...newMeeting, type: e.target.value as MeetingRecord['type'] })}>
-                            <option>Visita tecnica</option>
-                            <option>Seguimiento</option>
-                            <option>Cierre</option>
-                            <option>Instalacion</option>
-                            <option>Otro</option>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Cliente relacionado</label>
+                          <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={newMeeting.clientId} onChange={e => setNewMeeting({ ...newMeeting, clientId: e.target.value })}>
+                            <option value="">Cliente de cotizacion actual</option>
+                            {clients.map(client => <option key={client.id} value={client.id}>{client.company || client.name}</option>)}
                           </select>
-                          <Input placeholder="Responsable" value={newMeeting.owner} onChange={e => setNewMeeting({ ...newMeeting, owner: e.target.value })} />
                         </div>
-                        <Input placeholder="Ubicacion" value={newMeeting.location} onChange={e => setNewMeeting({ ...newMeeting, location: e.target.value })} />
-                        <textarea className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Objetivo / pendientes" value={newMeeting.notes} onChange={e => setNewMeeting({ ...newMeeting, notes: e.target.value })} />
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Titulo de la cita</label>
+                          <Input placeholder="Ej. Visita a sitio, llamada de seguimiento..." value={newMeeting.title} onChange={e => setNewMeeting({ ...newMeeting, title: e.target.value })} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Fecha</label>
+                            <Input type="date" value={newMeeting.date} onChange={e => setNewMeeting({ ...newMeeting, date: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Hora</label>
+                            <Input type="time" value={newMeeting.time} onChange={e => setNewMeeting({ ...newMeeting, time: e.target.value })} />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Tipo</label>
+                            <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={newMeeting.type} onChange={e => setNewMeeting({ ...newMeeting, type: e.target.value as MeetingRecord['type'] })}>
+                              <option>Visita tecnica</option>
+                              <option>Seguimiento</option>
+                              <option>Cierre</option>
+                              <option>Instalacion</option>
+                              <option>Otro</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Responsable</label>
+                            <Input placeholder="Ventas" value={newMeeting.owner} onChange={e => setNewMeeting({ ...newMeeting, owner: e.target.value })} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Ubicacion</label>
+                          <Input placeholder="Direccion o referencia del punto de encuentro" value={newMeeting.location} onChange={e => setNewMeeting({ ...newMeeting, location: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Objetivo / pendientes</label>
+                          <textarea className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Ej. Levantamiento, revisar canalizacion, confirmar equipos, medir distancia..." value={newMeeting.notes} onChange={e => setNewMeeting({ ...newMeeting, notes: e.target.value })} />
+                        </div>
                         <Button onClick={createMeeting} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black"><CalendarDays size={16} className="mr-2" /> Programar Cita</Button>
                       </div>
                     </section>
