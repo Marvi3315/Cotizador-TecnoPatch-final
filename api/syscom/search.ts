@@ -42,6 +42,9 @@ const buildSearchVariants = (query: string) => {
       .slice(0, 7);
     variants.push([brand, ...terms].join(' '));
     variants.push(`${brand} ${terms.slice(0, 3).join(' ')}`.trim());
+    variants.push(`${brand} poe`);
+    variants.push(`${brand} injector`);
+    variants.push(brand);
   }
 
   variants.push(trimmed);
@@ -51,7 +54,7 @@ const buildSearchVariants = (query: string) => {
     variants.push(normalized.split(' ').slice(0, 8).join(' '));
   }
 
-  return Array.from(new Set(variants.filter(Boolean))).slice(0, 4);
+  return Array.from(new Set(variants.filter(Boolean))).slice(0, 7);
 };
 
 const fetchProducts = async (token: string, query: string, page: string) => {
@@ -68,7 +71,24 @@ const fetchProducts = async (token: string, query: string, page: string) => {
   return response.json();
 };
 
-const mergeProductResponses = (responses: any[]) => {
+const productScore = (product: any, query: string) => {
+  const text = `${product.marca || ''} ${product.modelo || ''} ${product.titulo || ''}`.toLowerCase();
+  const normalized = normalizeQuery(query).toLowerCase();
+  const brand = knownBrands.find(item => normalized.includes(item));
+  const terms = normalized
+    .split(' ')
+    .filter(word => word.length > 2 && !['con', 'para', 'compatible', 'plug', 'and', 'play'].includes(word));
+
+  let score = 0;
+  if (brand && String(product.marca || '').toLowerCase().includes(brand)) score += 100;
+  if (brand && text.includes(brand)) score += 40;
+  terms.forEach(term => {
+    if (text.includes(term)) score += 4;
+  });
+  return score;
+};
+
+const mergeProductResponses = (responses: any[], query: string) => {
   const base = responses.find(data => data && !data.error) || {};
   const seen = new Set<string>();
   const productos = responses.flatMap(data => Array.isArray(data?.productos) ? data.productos : []);
@@ -78,6 +98,7 @@ const mergeProductResponses = (responses: any[]) => {
     seen.add(id);
     return true;
   });
+  merged.sort((a: any, b: any) => productScore(b, query) - productScore(a, query));
 
   return {
     ...base,
@@ -100,7 +121,7 @@ export default async function handler(req: any, res: any) {
 
     const variants = buildSearchVariants(query);
     const responses = await Promise.all(variants.map(item => fetchProducts(token, item, page.toString())));
-    const data = responses.length > 1 ? mergeProductResponses(responses) : responses[0];
+    const data = responses.length > 1 ? mergeProductResponses(responses, query) : responses[0];
 
     searchCache.set(cacheKey, { at: Date.now(), data });
     if (searchCache.size > 80) {

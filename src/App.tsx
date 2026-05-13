@@ -1780,10 +1780,10 @@ export default function App() {
                                 <button onClick={() => updateQuantity(item.product.producto_id, 1)} className="flex h-11 items-center justify-center hover:bg-slate-100 text-slate-500 active:bg-slate-200 transition-colors"><Plus size={16} /></button>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div className="flex flex-col items-stretch">
-                                  <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Costo base</label>
-                                  {item.product.isManual ? (
+                              <div className={`grid grid-cols-1 gap-2 ${item.product.isManual ? 'sm:grid-cols-2' : ''}`}>
+                                {item.product.isManual && (
+                                  <div className="flex flex-col items-stretch">
+                                    <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Costo base</label>
                                     <div className="flex items-center gap-2">
                                       <span className="shrink-0 text-slate-500 text-[10px] font-black uppercase tracking-tighter">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
                                       <Input
@@ -1800,13 +1800,8 @@ export default function App() {
                                         }}
                                       />
                                     </div>
-                                  ) : (
-                                    <div className="flex h-11 items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3">
-                                      <span className="text-[10px] font-black uppercase tracking-tighter text-slate-500">{currency === 'USD' ? 'USD $' : 'MXN $'}</span>
-                                      <span className="text-[15px] font-black text-slate-700">{costoDisplay.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
                                 <div className="flex flex-col items-stretch">
                                   <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Precio venta</label>
                                 <div className="flex items-center gap-2">
