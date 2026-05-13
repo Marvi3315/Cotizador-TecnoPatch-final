@@ -1170,42 +1170,52 @@ export default function App() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 3xl:grid-cols-4 4xl:grid-cols-5 5xl:grid-cols-6 gap-4 md:gap-6 4xl:gap-8 pt-4">
                   {isInitialState ? (
-                    <div className="col-span-full py-8 md:py-16 flex flex-col items-center">
-                      {/* Hero Section */}
-                      <div className="max-w-2xl w-full text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-600 text-[10px] font-bold uppercase tracking-widest mb-6">
-                          <div className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></div>
-                          Plataforma Profesional de Cotizacion
+                    <div className="col-span-full py-6 md:py-10 flex flex-col items-center">
+                      <div className="w-full max-w-6xl mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between animate-in fade-in slide-in-from-bottom-2 duration-700">
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-600">Busqueda por linea de trabajo</div>
+                          <h1 className="mt-1 text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Selecciona una categoria para empezar</h1>
                         </div>
-                        <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-4 tracking-tighter leading-tight">
-                          Arma propuestas TecnoPatch <span className="text-blue-600">con precios reales</span>.
-                        </h1>
-                        <p className="text-slate-500 text-lg max-w-lg mx-auto leading-relaxed">
-                          Busca equipo Syscom, agrega materiales y mano de obra, ajusta margenes y deja la cotizacion lista para enviar o imprimir.
+                        <p className="max-w-md text-sm text-slate-500 md:text-right">
+                          Accesos rapidos para productos Syscom y partidas comunes de instalacion.
                         </p>
                       </div>
 
-                      {/* Quick Access Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl animate-in fade-in zoom-in-95 delay-300 duration-700 fill-mode-both">
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4 w-full max-w-6xl animate-in fade-in zoom-in-95 delay-150 duration-700 fill-mode-both">
                         {[
-                          { icon: Camera, label: 'CCTV & Video', query: 'camara ip hikvision', color: 'bg-blue-600' },
-                          { icon: Network, label: 'Networking', query: 'ubiquiti access point', color: 'bg-emerald-600' },
-                          { icon: ShieldAlert, label: 'Alarmas', query: 'panel dsc alarma', color: 'bg-red-600' },
-                          { icon: Zap, label: 'Energia', query: 'panel solar', color: 'bg-amber-600' },
+                          { icon: Camera, label: 'CCTV', hint: 'Camaras, NVR, DVR', query: 'camara ip hikvision', color: 'bg-blue-600' },
+                          { icon: Network, label: 'Redes', hint: 'Switches, routers, WiFi', query: 'ubiquiti access point', color: 'bg-emerald-600' },
+                          { icon: ShieldAlert, label: 'Alarmas', hint: 'Paneles y sensores', query: 'panel dsc alarma', color: 'bg-red-600' },
+                          { icon: CheckCircle2, label: 'Acceso', hint: 'Lectores y controles', query: 'control de acceso', color: 'bg-sky-600' },
+                          { icon: Zap, label: 'Energia', hint: 'UPS, fuentes, solar', query: 'ups fuente poder', color: 'bg-amber-600' },
+                          { icon: Package, label: 'Cableado', hint: 'UTP, fibra, patch cord', query: 'cable utp cat6', color: 'bg-indigo-600' },
+                          { icon: Phone, label: 'Telefonia', hint: 'IP, conmutador, ATA', query: 'telefono ip', color: 'bg-cyan-600' },
+                          { icon: ClipboardList, label: 'Canalizacion', hint: 'Tuberia y accesorios', query: 'tuberia conduit', color: 'bg-slate-700' },
+                          { icon: Plus, label: 'Partida manual', hint: 'Material, obra o viaticos', query: '__manual__', color: 'bg-slate-900' },
+                          { icon: Search, label: 'Busqueda libre', hint: 'Escribe el modelo o marca', query: 'tecnopatch', color: 'bg-blue-500' },
                         ].map((idx, i) => (
                           <button
                             key={i}
-                            onClick={() => { setSearchTerm(idx.query); fetchProducts(idx.query); }}
-                            className="group bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all text-left flex flex-col gap-4 relative overflow-hidden"
+                            onClick={() => {
+                              if (idx.query === '__manual__') {
+                                setShowMobileCart(true);
+                                return;
+                              }
+                              setSearchTerm(idx.query);
+                              fetchProducts(idx.query);
+                            }}
+                            className="group bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-blue-200 transition-all text-left flex flex-col gap-3 relative overflow-hidden"
                           >
-                            <div className={`w-12 h-12 ${idx.color} rounded-2xl flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110 group-hover:rotate-3 animate-float`} style={{ animationDelay: `${i * 0.5}s` }}>
-                              <idx.icon size={24} strokeWidth={2.4} />
+                            <div className={`w-10 h-10 ${idx.color} rounded-xl flex items-center justify-center text-white shadow-md transition-transform group-hover:scale-105 group-hover:rotate-3`}>
+                              <idx.icon size={21} strokeWidth={2.4} />
                             </div>
-                            <div>
+                            <div className="relative z-10">
                               <div className="font-black text-slate-900 text-sm">{idx.label}</div>
-                              <div className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Explorar</div>
+                              <div className="mt-1 text-[11px] text-slate-500 font-semibold leading-snug">{idx.hint}</div>
                             </div>
-                            <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-slate-50 rounded-full opacity-50 group-hover:bg-blue-50 transition-colors"></div>
+                            <div className="absolute right-3 top-3 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100">
+                              <ArrowUp size={14} className="rotate-45" />
+                            </div>
                           </button>
                         ))}
                       </div>
