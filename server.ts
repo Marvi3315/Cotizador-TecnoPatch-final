@@ -39,33 +39,25 @@ const normalizeQuery = (value: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const buildSearchVariants = (query: string) => {
+const buildSearchQuery = (query: string) => {
   const trimmed = query.trim();
   const normalized = normalizeQuery(trimmed);
   const lower = normalized.toLowerCase();
   const brand = knownBrands.find(item => lower.includes(item));
-  const variants: string[] = [];
 
   if (brand && (trimmed.length > 80 || trimmed.includes('/'))) {
     const terms = normalized
       .split(' ')
       .filter(word => /poe|injector|inyector|30w|60w|gigabit|multigigabit|2\.5gbps|802\.3af|802\.3at/i.test(word))
-      .slice(0, 7);
-    variants.push([brand, ...terms].join(' '));
-    variants.push(`${brand} ${terms.slice(0, 3).join(' ')}`.trim());
-    variants.push(`${brand} poe`);
-    variants.push(`${brand} injector`);
-    variants.push(brand);
+      .slice(0, 5);
+    return [brand, ...terms].join(' ').trim();
   }
 
-  variants.push(trimmed);
-  if (normalized !== trimmed) variants.push(normalized);
-
-  if (!brand && normalized.length > 80) {
-    variants.push(normalized.split(' ').slice(0, 8).join(' '));
+  if (normalized.length > 100) {
+    return normalized.split(' ').slice(0, 8).join(' ');
   }
 
-  return Array.from(new Set(variants.filter(Boolean))).slice(0, 7);
+  return trimmed;
 };
 
 const fetchSyscomProducts = async (token: string, query: string, page: string) => {
@@ -80,41 +72,6 @@ const fetchSyscomProducts = async (token: string, query: string, page: string) =
   });
 
   return response.json();
-};
-
-const productScore = (product: any, query: string) => {
-  const text = `${product.marca || ''} ${product.modelo || ''} ${product.titulo || ''}`.toLowerCase();
-  const normalized = normalizeQuery(query).toLowerCase();
-  const brand = knownBrands.find(item => normalized.includes(item));
-  const terms = normalized
-    .split(' ')
-    .filter(word => word.length > 2 && !['con', 'para', 'compatible', 'plug', 'and', 'play'].includes(word));
-
-  let score = 0;
-  if (brand && String(product.marca || '').toLowerCase().includes(brand)) score += 100;
-  if (brand && text.includes(brand)) score += 40;
-  terms.forEach(term => {
-    if (text.includes(term)) score += 4;
-  });
-  return score;
-};
-
-const mergeProductResponses = (responses: any[], query: string) => {
-  const base = responses.find(data => data && !data.error) || {};
-  const seen = new Set<string>();
-  const productos = responses.flatMap(data => Array.isArray(data?.productos) ? data.productos : []);
-  const merged = productos.filter((product: any) => {
-    const id = String(product.producto_id || product.modelo || product.titulo || '');
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-  merged.sort((a: any, b: any) => productScore(b, query) - productScore(a, query));
-
-  return {
-    ...base,
-    productos: merged
-  };
 };
 
 async function getSyscomToken() {
@@ -168,9 +125,15 @@ app.get('/api/syscom/search', async (req, res) => {
     }
 
     const token = await getSyscomToken();
-    const variants = buildSearchVariants(query);
-    const responses = await Promise.all(variants.map(item => fetchSyscomProducts(token, item, page.toString())));
-    const data = responses.length > 1 ? mergeProductResponses(responses, query) : responses[0];
+    const syscomQuery = buildSearchQuery(query);
+    const data = await fetchSyscomProducts(token, syscomQuery, page.toString());
+
+    if (syscomQuery !== query) {
+      data.searchHint = {
+        original: query,
+        used: syscomQuery
+      };
+    }
 
     searchCache.set(cacheKey, { at: Date.now(), data });
     if (searchCache.size > 80) {

@@ -159,6 +159,21 @@ export default function App() {
       ...quote.items.map(item => `${item.product.titulo} ${item.product.modelo} ${item.product.marca}`)
     )
   );
+  const syscomSearchBrands = ['Hikvision', 'HiLook', 'Ubiquiti', 'Grandstream', 'TP-Link', 'Dahua', 'DSC', 'Honeywell', 'ZKTeco', 'Ruijie', 'Mikrotik'];
+  const normalizedSearchTerm = searchTerm.trim().replace(/\s+/g, ' ');
+  const detectedSearchBrand = syscomSearchBrands.find(brand => normalizedSearchTerm.toLowerCase().includes(brand.toLowerCase()));
+  const searchKeywords = normalizedSearchTerm
+    .replace(/[()/|,;]/g, ' ')
+    .split(' ')
+    .filter(word => /poe|inyector|injector|30w|60w|gigabit|multigigabit|2\.5gbps|switch|camara|nvr|dvr|panel|sensor|telefono|access|point/i.test(word))
+    .slice(0, 4);
+  const searchSuggestions = Array.from(new Set([
+    detectedSearchBrand || '',
+    detectedSearchBrand && searchKeywords.length ? `${detectedSearchBrand} ${searchKeywords.slice(0, 3).join(' ')}` : '',
+    searchKeywords.length ? searchKeywords.join(' ') : '',
+    normalizedSearchTerm.length > 80 ? normalizedSearchTerm.split(' ').slice(0, 6).join(' ') : ''
+  ].filter(Boolean)));
+  const shouldShowSearchTip = activeModule === 'cotizador' && normalizedSearchTerm.length > 45;
   const moduleTabs = [
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'cotizador', label: 'Cotizador', icon: ShoppingCart },
@@ -1288,6 +1303,33 @@ export default function App() {
                         </select>
                       </div>
                     </div>
+
+                    {shouldShowSearchTip && (
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3">
+                        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                          <p className="text-[11px] font-bold text-blue-900">
+                            Para Syscom funciona mejor buscar por modelo, marca o 2-4 palabras clave. Evita pegar la descripcion completa del producto.
+                          </p>
+                          {searchSuggestions.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {searchSuggestions.slice(0, 4).map(suggestion => (
+                                <button
+                                  key={suggestion}
+                                  type="button"
+                                  className="rounded-full border border-blue-200 bg-white px-3 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-600 hover:text-white transition-colors"
+                                  onClick={() => {
+                                    setSearchTerm(suggestion);
+                                    fetchProducts(suggestion);
+                                  }}
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
