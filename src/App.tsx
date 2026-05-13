@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -69,6 +69,8 @@ export default function App() {
   const [followUpNote, setFollowUpNote] = useState('');
   const [lostReason, setLostReason] = useState('');
   const [globalCrmSearch, setGlobalCrmSearch] = useState('');
+  const [editingClientId, setEditingClientId] = useState('');
+  const [editingMeetingId, setEditingMeetingId] = useState('');
   const [newClient, setNewClient] = useState({
     name: '',
     company: '',
@@ -425,14 +427,47 @@ export default function App() {
     setManualQuantity(template.quantity);
   };
 
+  const resetClientForm = () => {
+    setEditingClientId('');
+    setNewClient({
+      name: '',
+      company: '',
+      phone: '',
+      email: '',
+      rfc: '',
+      contactRole: '',
+      address: '',
+      source: 'WhatsApp',
+      status: 'Prospecto',
+      owner: 'Ventas',
+      notes: ''
+    });
+  };
+
+  const resetMeetingForm = () => {
+    setEditingMeetingId('');
+    setNewMeeting({
+      clientId: '',
+      title: '',
+      date: '',
+      time: '',
+      type: 'Visita tecnica',
+      owner: 'Ventas',
+      location: '',
+      status: 'Programada',
+      notes: ''
+    });
+  };
+
   const createClient = async () => {
     if (!newClient.name.trim() && !newClient.company.trim()) {
       toast.error('Agrega nombre o empresa del cliente');
       return;
     }
 
+    const existingClient = clients.find(client => client.id === editingClientId);
     const client: ClientRecord = {
-      id: `client-${Date.now()}`,
+      id: editingClientId || `client-${Date.now()}`,
       name: newClient.name.trim(),
       company: newClient.company.trim(),
       phone: newClient.phone.trim(),
@@ -444,7 +479,7 @@ export default function App() {
       status: newClient.status,
       owner: newClient.owner.trim() || 'Ventas',
       notes: newClient.notes.trim(),
-      createdAt: new Date().toISOString()
+      createdAt: existingClient?.createdAt || new Date().toISOString()
     };
 
     try {
@@ -457,20 +492,8 @@ export default function App() {
       setClientEmail(client.email);
       setClientRfc(client.rfc || '');
       setClientContactRole(client.contactRole || '');
-      setNewClient({
-        name: '',
-        company: '',
-        phone: '',
-        email: '',
-        rfc: '',
-        contactRole: '',
-        address: '',
-        source: 'WhatsApp',
-        status: 'Prospecto',
-        owner: 'Ventas',
-        notes: ''
-      });
-      toast.success('Cliente agregado al CRM compartido');
+      resetClientForm();
+      toast.success(editingClientId ? 'Cliente actualizado' : 'Cliente agregado al CRM compartido');
     } catch (error) {
       console.error('Error saving client:', error);
       setCloudStatus('Firebase no guardo');
@@ -490,10 +513,30 @@ export default function App() {
     toast.success('Cliente cargado en cotizacion');
   };
 
+  const editClient = (client: ClientRecord) => {
+    setEditingClientId(client.id);
+    setNewClient({
+      name: client.name || '',
+      company: client.company || '',
+      phone: client.phone || '',
+      email: client.email || '',
+      rfc: client.rfc || '',
+      contactRole: client.contactRole || '',
+      address: client.address || '',
+      source: client.source || 'WhatsApp',
+      status: client.status || 'Prospecto',
+      owner: client.owner || 'Ventas',
+      notes: client.notes || ''
+    });
+    setActiveModule('clientes');
+    toast.info('Cliente cargado para editar');
+  };
+
   const createMeeting = async () => {
     const selectedClient = clients.find(client => client.id === newMeeting.clientId);
+    const existingMeeting = meetings.find(meeting => meeting.id === editingMeetingId);
     const fallbackClientName = clientName || clientCompany;
-    if (!selectedClient && !fallbackClientName) {
+    if (!selectedClient && !fallbackClientName && !existingMeeting?.clientName) {
       toast.error('Selecciona un cliente o carga uno en la cotizacion');
       return;
     }
@@ -503,9 +546,9 @@ export default function App() {
     }
 
     const meeting: MeetingRecord = {
-      id: `meeting-${Date.now()}`,
-      clientId: selectedClient?.id || '',
-      clientName: selectedClient ? (selectedClient.company || selectedClient.name) : fallbackClientName,
+      id: editingMeetingId || `meeting-${Date.now()}`,
+      clientId: selectedClient?.id || existingMeeting?.clientId || '',
+      clientName: selectedClient ? (selectedClient.company || selectedClient.name) : (existingMeeting?.clientName || fallbackClientName),
       title: newMeeting.title.trim() || newMeeting.type,
       date: newMeeting.date,
       time: newMeeting.time,
@@ -520,23 +563,30 @@ export default function App() {
       setCloudStatus('Guardando Firebase...');
       await saveSharedMeeting(meeting);
       setCloudStatus('Firebase guardado');
-      setNewMeeting({
-        clientId: '',
-        title: '',
-        date: '',
-        time: '',
-        type: 'Visita tecnica',
-        owner: 'Ventas',
-        location: '',
-        status: 'Programada',
-        notes: ''
-      });
-      toast.success('Cita programada en agenda compartida');
+      resetMeetingForm();
+      toast.success(editingMeetingId ? 'Cita actualizada' : 'Cita programada en agenda compartida');
     } catch (error) {
       console.error('Error saving meeting:', error);
       setCloudStatus('Firebase no guardo');
       toast.error(`No se pudo guardar la cita: ${formatCloudError(error)}`);
     }
+  };
+
+  const editMeeting = (meeting: MeetingRecord) => {
+    setEditingMeetingId(meeting.id);
+    setNewMeeting({
+      clientId: meeting.clientId || '',
+      title: meeting.title || '',
+      date: meeting.date || '',
+      time: meeting.time || '',
+      type: meeting.type || 'Visita tecnica',
+      owner: meeting.owner || 'Ventas',
+      location: meeting.location || '',
+      status: meeting.status || 'Programada',
+      notes: meeting.notes || ''
+    });
+    setActiveModule('citas');
+    toast.info('Cita cargada para editar');
   };
 
   const updateMeetingStatus = async (id: string, status: MeetingRecord['status']) => {
@@ -2136,7 +2186,16 @@ export default function App() {
                 {activeModule === 'clientes' && (
                   <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
                     <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
-                      <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><UserPlus size={20} className="text-blue-600" /> Nuevo Cliente</h2>
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                          <UserPlus size={20} className="text-blue-600" /> {editingClientId ? 'Editar Cliente' : 'Nuevo Cliente'}
+                        </h2>
+                        {editingClientId && (
+                          <Button variant="ghost" size="sm" onClick={resetClientForm} className="text-xs font-black">
+                            Cancelar
+                          </Button>
+                        )}
+                      </div>
                       <div className="mt-4 space-y-3">
                         <Input name="crm-client-name" placeholder="Nombre del contacto" value={newClient.name} onChange={e => setNewClient({ ...newClient, name: e.target.value })} />
                         <Input name="crm-client-company" placeholder="Empresa / Negocio" value={newClient.company} onChange={e => setNewClient({ ...newClient, company: e.target.value })} />
@@ -2161,7 +2220,10 @@ export default function App() {
                         </div>
                         <Input name="crm-client-source" placeholder="Origen: WhatsApp, referido, web..." value={newClient.source} onChange={e => setNewClient({ ...newClient, source: e.target.value })} />
                         <textarea name="crm-client-notes" className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Notas internas" value={newClient.notes} onChange={e => setNewClient({ ...newClient, notes: e.target.value })} />
-                        <Button onClick={createClient} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black"><UserPlus size={16} className="mr-2" /> Guardar Cliente</Button>
+                        <Button onClick={createClient} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">
+                          {editingClientId ? <Save size={16} className="mr-2" /> : <UserPlus size={16} className="mr-2" />}
+                          {editingClientId ? 'Actualizar Cliente' : 'Guardar Cliente'}
+                        </Button>
                       </div>
                     </section>
 
@@ -2223,6 +2285,15 @@ export default function App() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                className="h-10 w-10 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                                title="Editar cliente"
+                                onClick={() => editClient(client)}
+                              >
+                                <Pencil size={16} />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 className="h-10 w-10 text-slate-400 hover:bg-red-50 hover:text-red-600"
                                 title="Eliminar cliente"
                                 onClick={() => deleteClient(client)}
@@ -2241,7 +2312,16 @@ export default function App() {
                 {activeModule === 'citas' && (
                   <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
                     <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
-                      <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><CalendarDays size={20} className="text-blue-600" /> Nueva Cita</h2>
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                          <CalendarDays size={20} className="text-blue-600" /> {editingMeetingId ? 'Editar Cita' : 'Nueva Cita'}
+                        </h2>
+                        {editingMeetingId && (
+                          <Button variant="ghost" size="sm" onClick={resetMeetingForm} className="text-xs font-black">
+                            Cancelar
+                          </Button>
+                        )}
+                      </div>
                       <div className="mt-4 space-y-3">
                         <div>
                           <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Cliente relacionado</label>
@@ -2281,6 +2361,15 @@ export default function App() {
                           </div>
                         </div>
                         <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Estado de la cita</label>
+                          <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={newMeeting.status} onChange={e => setNewMeeting({ ...newMeeting, status: e.target.value as MeetingRecord['status'] })}>
+                            <option>Programada</option>
+                            <option>Realizada</option>
+                            <option>Reagendada</option>
+                            <option>Cancelada</option>
+                          </select>
+                        </div>
+                        <div>
                           <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Ubicacion</label>
                           <Input placeholder="Direccion o referencia del punto de encuentro" value={newMeeting.location} onChange={e => setNewMeeting({ ...newMeeting, location: e.target.value })} />
                         </div>
@@ -2288,7 +2377,10 @@ export default function App() {
                           <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Objetivo / pendientes</label>
                           <textarea className="w-full min-h-[90px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Ej. Levantamiento, revisar canalizacion, confirmar equipos, medir distancia..." value={newMeeting.notes} onChange={e => setNewMeeting({ ...newMeeting, notes: e.target.value })} />
                         </div>
-                        <Button onClick={createMeeting} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black"><CalendarDays size={16} className="mr-2" /> Programar Cita</Button>
+                        <Button onClick={createMeeting} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">
+                          {editingMeetingId ? <Save size={16} className="mr-2" /> : <CalendarDays size={16} className="mr-2" />}
+                          {editingMeetingId ? 'Actualizar Cita' : 'Programar Cita'}
+                        </Button>
                       </div>
                     </section>
 
@@ -2317,6 +2409,15 @@ export default function App() {
                             <div className="flex gap-2">
                               <Button variant="outline" onClick={() => updateMeetingStatus(meeting.id, 'Realizada')}><CheckCircle2 size={15} className="mr-1" /> Realizada</Button>
                               <Button variant="secondary" onClick={() => updateMeetingStatus(meeting.id, 'Reagendada')}>Reagendar</Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-10 w-10 text-slate-500 hover:bg-blue-50 hover:text-blue-600"
+                                title="Editar cita"
+                                onClick={() => editMeeting(meeting)}
+                              >
+                                <Pencil size={16} />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
