@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,7 +53,7 @@ export default function App() {
   const [manualUnit, setManualUnit] = useState('pz');
   const [manualQuantity, setManualQuantity] = useState(1);
   const [manualUnitPrice, setManualUnitPrice] = useState(0);
-  const [activeModule, setActiveModule] = useState<'cotizador' | 'clientes' | 'citas' | 'seguimiento'>('cotizador');
+  const [activeModule, setActiveModule] = useState<'inicio' | 'cotizador' | 'clientes' | 'citas' | 'seguimiento'>('inicio');
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [cloudStatus, setCloudStatus] = useState(firebaseReady ? 'Conectando Firebase...' : 'Firebase sin configurar');
@@ -125,6 +125,12 @@ export default function App() {
     quote.nextFollowUpDate < todayIso &&
     !['Aceptada', 'Rechazada'].includes(quote.quoteStatus || 'Borrador')
   );
+  const quotesToSend = quoteHistory.filter(quote => (quote.quoteStatus || 'Borrador') === 'Borrador');
+  const quotesInFollowUp = quoteHistory.filter(quote => quote.quoteStatus === 'Seguimiento');
+  const upcomingFollowUps = quoteHistory
+    .filter(quote => quote.nextFollowUpDate && quote.nextFollowUpDate >= todayIso && !['Aceptada', 'Rechazada'].includes(quote.quoteStatus || 'Borrador'))
+    .sort((a, b) => String(a.nextFollowUpDate).localeCompare(String(b.nextFollowUpDate)))
+    .slice(0, 4);
   const crmSearch = globalCrmSearch.trim().toLowerCase();
   const matchesCrmSearch = (...values: Array<string | number | undefined>) =>
     !crmSearch || values.some(value => String(value || '').toLowerCase().includes(crmSearch));
@@ -150,6 +156,7 @@ export default function App() {
     )
   );
   const moduleTabs = [
+    { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'cotizador', label: 'Cotizador', icon: ShoppingCart },
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'citas', label: 'Citas', icon: CalendarDays },
@@ -1949,6 +1956,153 @@ export default function App() {
                     <div className="mt-2 text-2xl font-black text-red-500">{overdueFollowUps.length}</div>
                   </div>
                 </div>
+
+                {activeModule === 'inicio' && (
+                  <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-5">
+                    <section className="space-y-5">
+                      <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-sm overflow-hidden relative">
+                        <div className="relative z-10">
+                          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-300">Inicio TecnoPatch</p>
+                          <h2 className="mt-2 text-2xl md:text-3xl font-black tracking-tight">Centro de trabajo comercial</h2>
+                          <p className="mt-2 max-w-2xl text-sm text-slate-300">
+                            Revisa lo urgente, retoma cotizaciones y abre rapido el flujo que necesitas para ventas.
+                          </p>
+                          <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <Button onClick={() => setActiveModule('cotizador')} className="bg-blue-600 hover:bg-blue-700 text-white font-black">
+                              <ShoppingCart size={16} className="mr-2" /> Cotizar
+                            </Button>
+                            <Button onClick={() => setActiveModule('clientes')} variant="secondary" className="font-black">
+                              <UserPlus size={16} className="mr-2" /> Cliente
+                            </Button>
+                            <Button onClick={() => setActiveModule('citas')} variant="secondary" className="font-black">
+                              <CalendarDays size={16} className="mr-2" /> Cita
+                            </Button>
+                            <Button onClick={() => setActiveModule('seguimiento')} variant="secondary" className="font-black">
+                              <ClipboardList size={16} className="mr-2" /> Pipeline
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="absolute -right-14 -bottom-20 h-52 w-52 rounded-full bg-blue-500/20"></div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-red-500">
+                            <Clock3 size={14} /> Urgente
+                          </div>
+                          <div className="mt-2 text-3xl font-black text-slate-900">{overdueFollowUps.length}</div>
+                          <p className="text-xs text-slate-500">seguimientos atrasados</p>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-blue-600">
+                            <FileText size={14} /> Por enviar
+                          </div>
+                          <div className="mt-2 text-3xl font-black text-slate-900">{quotesToSend.length}</div>
+                          <p className="text-xs text-slate-500">cotizaciones en borrador</p>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                            <CheckCircle2 size={14} /> Ganado
+                          </div>
+                          <div className="mt-2 text-xl font-black text-slate-900">{acceptedTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</div>
+                          <p className="text-xs text-slate-500">aceptado registrado</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                          <div>
+                            <h3 className="font-black text-slate-900">Alertas Comerciales</h3>
+                            <p className="text-xs text-slate-500">Lo que conviene revisar antes de salir a vender.</p>
+                          </div>
+                          <Badge variant="secondary">{overdueFollowUps.length + quotesToSend.length + todayMeetings.length} alertas</Badge>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {overdueFollowUps.slice(0, 4).map(quote => (
+                            <button key={quote.id} onClick={() => { selectQuoteForFollowUp(quote); setActiveModule('seguimiento'); }} className="w-full p-4 text-left hover:bg-red-50/40 transition-colors">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-red-500">Seguimiento atrasado</p>
+                                  <p className="font-black text-slate-900">{quote.clientCompany || quote.clientName || 'Sin cliente'}</p>
+                                  <p className="text-xs text-slate-500">{(quote as any).quoteNumber || quote.id.toUpperCase()} · {quote.nextFollowUpDate}</p>
+                                </div>
+                                <span className="font-black text-red-500">{quote.total.toLocaleString('es-MX', { style: 'currency', currency: quote.currency || 'MXN' })}</span>
+                              </div>
+                            </button>
+                          ))}
+                          {todayMeetings.slice(0, 3).map(meeting => (
+                            <button key={meeting.id} onClick={() => setActiveModule('citas')} className="w-full p-4 text-left hover:bg-blue-50/40 transition-colors">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Cita de hoy</p>
+                              <p className="font-black text-slate-900">{meeting.title}</p>
+                              <p className="text-xs text-slate-500">{meeting.clientName} · {meeting.time} · {meeting.owner}</p>
+                            </button>
+                          ))}
+                          {overdueFollowUps.length === 0 && todayMeetings.length === 0 && quotesToSend.length === 0 && (
+                            <div className="p-5 text-sm font-bold text-slate-400">Sin alertas fuertes por ahora.</div>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="space-y-5">
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                          <h3 className="font-black text-slate-900">Ultimas Cotizaciones</h3>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowHistory(true)}>Ver historial</Button>
+                        </div>
+                        <div className="divide-y divide-slate-100">
+                          {quoteHistory.slice(0, 5).map(quote => (
+                            <button key={quote.id} onClick={() => restoreQuote(quote)} className="w-full p-4 text-left hover:bg-blue-50/30 transition-colors">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">{(quote as any).quoteNumber || quote.id.toUpperCase()}</p>
+                                  <p className="font-black text-slate-900 line-clamp-1">{quote.clientCompany || quote.clientName || 'Sin cliente'}</p>
+                                  <p className="text-xs text-slate-500">{quote.items.length} partidas · {quote.quoteStatus || 'Borrador'}</p>
+                                </div>
+                                <span className="font-black text-blue-600 shrink-0">{quote.total.toLocaleString('es-MX', { style: 'currency', currency: quote.currency || 'MXN' })}</span>
+                              </div>
+                            </button>
+                          ))}
+                          {quoteHistory.length === 0 && <div className="p-5 text-sm font-bold text-slate-400">Sin cotizaciones guardadas.</div>}
+                        </div>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+                        <h3 className="font-black text-slate-900">Radar Comercial</h3>
+                        <div className="mt-3 space-y-2 text-sm">
+                          <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                            <span className="text-slate-500">Cotizaciones en seguimiento</span>
+                            <span className="font-black text-slate-900">{quotesInFollowUp.length}</span>
+                          </div>
+                          <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                            <span className="text-slate-500">Próximos contactos</span>
+                            <span className="font-black text-slate-900">{upcomingFollowUps.length}</span>
+                          </div>
+                          <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                            <span className="text-slate-500">Pipeline abierto</span>
+                            <span className="font-black text-blue-600">{openPipelineTotal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+                        <h3 className="font-black text-slate-900">Top Categorias</h3>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {[
+                            { label: 'CCTV', query: 'camara ip hikvision' },
+                            { label: 'Redes', query: 'ubiquiti access point' },
+                            { label: 'Alarmas', query: 'panel dsc alarma' },
+                            { label: 'Acceso', query: 'control de acceso' }
+                          ].map(item => (
+                            <button key={item.label} onClick={() => { setSearchTerm(item.query); fetchProducts(item.query); setActiveModule('cotizador'); }} className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs font-black uppercase text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 transition-colors">
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                )}
 
                 {activeModule === 'clientes' && (
                   <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
