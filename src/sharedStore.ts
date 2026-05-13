@@ -80,6 +80,16 @@ export async function deleteSharedQuote(id: string) {
   await deleteDoc(doc(database, 'quoteHistory', id));
 }
 
+export async function deleteSharedClient(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, 'clients', id));
+}
+
+export async function deleteSharedMeeting(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, 'meetings', id));
+}
+
 export async function saveSharedClient(client: ClientRecord) {
   const database = requireDb();
   const clientRef = doc(database, 'clients', client.id);

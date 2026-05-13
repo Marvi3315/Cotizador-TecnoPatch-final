@@ -13,6 +13,8 @@ import { firebaseReady } from './firebase';
 import { QuoteDocument } from './components/QuoteDocument';
 import { calculateMargin, calculateSubtotal as getQuoteSubtotal, calculateTotalCostDisplay as getTotalCostDisplay, formatSyscomPrice } from './pricing';
 import {
+  deleteSharedClient,
+  deleteSharedMeeting,
   deleteSharedQuote,
   saveSharedClient,
   saveSharedMeeting,
@@ -668,6 +670,8 @@ export default function App() {
   const deleteFromHistory = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
 
+    if (!window.confirm('Eliminar esta cotizacion del historial compartido?')) return;
+
     try {
       setCloudStatus('Guardando Firebase...');
       await deleteSharedQuote(id);
@@ -677,6 +681,37 @@ export default function App() {
       console.error('Error deleting quote:', error);
       setCloudStatus('Firebase no guardo');
       toast.error(`No se pudo eliminar la cotizacion: ${formatCloudError(error)}`);
+    }
+  };
+
+  const deleteClient = async (client: ClientRecord) => {
+    const label = client.company || client.name || 'este cliente';
+    if (!window.confirm(`Eliminar ${label} de la cartera compartida? Las cotizaciones ya guardadas no se eliminan.`)) return;
+
+    try {
+      setCloudStatus('Guardando Firebase...');
+      await deleteSharedClient(client.id);
+      setCloudStatus('Firebase guardado');
+      toast.success('Cliente eliminado');
+    } catch (error) {
+      console.error('Error deleting client:', error);
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo eliminar el cliente: ${formatCloudError(error)}`);
+    }
+  };
+
+  const deleteMeeting = async (meeting: MeetingRecord) => {
+    if (!window.confirm(`Eliminar la cita "${meeting.title}"?`)) return;
+
+    try {
+      setCloudStatus('Guardando Firebase...');
+      await deleteSharedMeeting(meeting.id);
+      setCloudStatus('Firebase guardado');
+      toast.success('Cita eliminada');
+    } catch (error) {
+      console.error('Error deleting meeting:', error);
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo eliminar la cita: ${formatCloudError(error)}`);
     }
   };
 
@@ -2185,6 +2220,15 @@ export default function App() {
                             <div className="flex gap-2">
                               <Button variant="outline" onClick={() => useClientInQuote(client)}>Usar en cotizacion</Button>
                               <Button variant="secondary" onClick={() => { setNewMeeting({ ...newMeeting, clientId: client.id, location: client.address, owner: client.owner }); setActiveModule('citas'); }}>Agendar</Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-10 w-10 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                title="Eliminar cliente"
+                                onClick={() => deleteClient(client)}
+                              >
+                                <Trash size={16} />
+                              </Button>
                             </div>
                           </div>
                           );
@@ -2273,6 +2317,15 @@ export default function App() {
                             <div className="flex gap-2">
                               <Button variant="outline" onClick={() => updateMeetingStatus(meeting.id, 'Realizada')}><CheckCircle2 size={15} className="mr-1" /> Realizada</Button>
                               <Button variant="secondary" onClick={() => updateMeetingStatus(meeting.id, 'Reagendada')}>Reagendar</Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-10 w-10 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                title="Eliminar cita"
+                                onClick={() => deleteMeeting(meeting)}
+                              >
+                                <Trash size={16} />
+                              </Button>
                             </div>
                           </div>
                         ))}
@@ -2393,10 +2446,30 @@ export default function App() {
                           </div>
                           <div className="p-4 space-y-3">
                             {filteredQuoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).slice(0, 8).map(q => (
-                              <button key={q.id} onClick={() => selectQuoteForFollowUp(q)} className={`w-full text-left rounded-lg border p-3 transition-colors ${selectedFollowQuoteId === q.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-100 hover:border-blue-200 hover:bg-blue-50/30'}`}>
+                              <div
+                                key={q.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => selectQuoteForFollowUp(q)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' || e.key === ' ') selectQuoteForFollowUp(q);
+                                }}
+                                className={`w-full cursor-pointer text-left rounded-lg border p-3 transition-colors ${selectedFollowQuoteId === q.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-100 hover:border-blue-200 hover:bg-blue-50/30'}`}
+                              >
                                 <div className="flex justify-between gap-3">
                                   <span className="font-black text-slate-900">{(q as any).quoteNumber || q.id.toUpperCase()}</span>
-                                  <span className="font-black text-blue-600">{q.total.toLocaleString('es-MX', { style: 'currency', currency: q.currency || 'MXN' })}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-blue-600">{q.total.toLocaleString('es-MX', { style: 'currency', currency: q.currency || 'MXN' })}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                      title="Eliminar cotizacion"
+                                      onClick={e => deleteFromHistory(e, q.id)}
+                                    >
+                                      <Trash size={14} />
+                                    </Button>
+                                  </div>
                                 </div>
                                 <p className="mt-1 text-xs text-slate-500">{q.clientCompany || q.clientName || 'Sin cliente'} · {q.date}</p>
                                 {q.nextFollowUpDate && (
@@ -2410,7 +2483,7 @@ export default function App() {
                                 </p>
                                 {q.followUpNote && <p className="mt-2 text-[11px] text-slate-500 line-clamp-2">{q.followUpNote}</p>}
                                 {q.lostReason && <Badge className="mt-2 bg-red-50 text-red-700 border-red-100">{q.lostReason}</Badge>}
-                              </button>
+                              </div>
                             ))}
                             {filteredQuoteHistory.filter(q => ((q as any).quoteStatus || 'Borrador') === status).length === 0 && (
                               <p className="text-sm text-slate-400 font-bold">Sin cotizaciones en esta etapa.</p>
