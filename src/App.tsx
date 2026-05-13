@@ -1211,24 +1211,51 @@ export default function App() {
                             <Button variant="ghost" size="sm" className="text-[10px] h-6 font-bold" onClick={() => setShowHistory(true)}>Ver Todo</Button>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {quoteHistory.slice(0, 2).map((hist) => (
-                              <Card key={hist.id} className="cursor-pointer hover:border-blue-600 transition-all group" onClick={() => restoreQuote(hist)}>
-                                <CardContent className="p-4 flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 font-black text-xs group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                      #{hist.id.slice(0, 2).toUpperCase()}
+                            {quoteHistory.slice(0, 2).map((hist) => {
+                              const syscomCount = hist.items.filter(item => !item.product.isManual).length;
+                              const manualCount = hist.items.filter(item => item.product.isManual).length;
+                              const itemPreview = hist.items
+                                .slice(0, 2)
+                                .map(item => `${item.quantity}x ${item.product.titulo || item.product.modelo || 'Partida'}`)
+                                .join(' · ');
+
+                              return (
+                              <Card key={hist.id} className="cursor-pointer hover:border-blue-600 hover:shadow-lg transition-all group" onClick={() => restoreQuote(hist)}>
+                                <CardContent className="p-4 space-y-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-start gap-3 min-w-0">
+                                      <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 font-black text-xs group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0">
+                                        #{hist.id.slice(0, 2).toUpperCase()}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{(hist as any).quoteNumber || hist.id.toUpperCase()}</span>
+                                          <Badge variant="secondary" className="text-[9px]">{hist.quoteStatus || 'Borrador'}</Badge>
+                                        </div>
+                                        <div className="text-sm font-black text-slate-900 line-clamp-1">{hist.clientCompany || hist.clientName || 'Sin cliente'}</div>
+                                        <div className="text-[10px] text-slate-400">{hist.date}</div>
+                                      </div>
                                     </div>
-                                    <div>
-                                      <div className="text-sm font-bold text-slate-900 line-clamp-1">{hist.items.map(i => i.product.modelo).join(', ')}</div>
-                                      <div className="text-[10px] text-slate-400">{hist.date}</div>
+                                    <div className="text-right font-black text-slate-900 text-sm shrink-0">
+                                      {hist.total.toLocaleString('es-MX', { style: 'currency', currency: hist.currency || 'MXN' })}
                                     </div>
                                   </div>
-                                  <div className="text-right font-black text-slate-900 text-sm">
-                                    {hist.total.toLocaleString('es-MX', { style: 'currency', currency: hist.currency || 'MXN' })}
+                                  <div className="flex flex-wrap gap-2">
+                                    <Badge variant="secondary" className="text-[9px]">{hist.items.length} partidas</Badge>
+                                    <Badge variant="secondary" className="text-[9px]">{syscomCount} Syscom</Badge>
+                                    <Badge variant="secondary" className="text-[9px]">{manualCount} manuales</Badge>
                                   </div>
+                                  <p className="text-xs text-slate-500 line-clamp-2">
+                                    {itemPreview || 'Sin partidas'}
+                                    {hist.items.length > 2 ? ` · +${hist.items.length - 2} mas` : ''}
+                                  </p>
+                                  {hist.nextFollowUpDate && (
+                                    <p className="text-[11px] font-bold text-emerald-600">Proximo seguimiento: {hist.nextFollowUpDate}</p>
+                                  )}
                                 </CardContent>
                               </Card>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -2087,23 +2114,26 @@ export default function App() {
                     <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
                       <h2 className="text-lg font-black text-slate-900 flex items-center gap-2"><ClipboardList size={20} className="text-blue-600" /> Venta Actual</h2>
                       <div className="mt-4 space-y-3">
-                        <select
-                          name="follow-quote"
-                          className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
-                          value={selectedFollowQuoteId}
-                          onChange={e => {
-                            const quote = quoteHistory.find(item => item.id === e.target.value);
-                            if (quote) selectQuoteForFollowUp(quote);
-                            else setSelectedFollowQuoteId('');
-                          }}
-                        >
-                          <option value="">Selecciona una cotizacion guardada</option>
-                          {filteredQuoteHistory.map(quote => (
-                            <option key={quote.id} value={quote.id}>
-                              {((quote as any).quoteNumber || quote.id.toUpperCase())} · {quote.clientCompany || quote.clientName || 'Sin cliente'} · {quote.total.toLocaleString('es-MX', { style: 'currency', currency: quote.currency || 'MXN' })}
-                            </option>
-                          ))}
-                        </select>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Cotizacion a gestionar</label>
+                          <select
+                            name="follow-quote"
+                            className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                            value={selectedFollowQuoteId}
+                            onChange={e => {
+                              const quote = quoteHistory.find(item => item.id === e.target.value);
+                              if (quote) selectQuoteForFollowUp(quote);
+                              else setSelectedFollowQuoteId('');
+                            }}
+                          >
+                            <option value="">Selecciona una cotizacion guardada</option>
+                            {filteredQuoteHistory.map(quote => (
+                              <option key={quote.id} value={quote.id}>
+                                {((quote as any).quoteNumber || quote.id.toUpperCase())} · {quote.clientCompany || quote.clientName || 'Sin cliente'} · {quote.total.toLocaleString('es-MX', { style: 'currency', currency: quote.currency || 'MXN' })}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                         {selectedFollowQuote && (
                           <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
                             <div className="flex items-start justify-between gap-3">
@@ -2118,16 +2148,32 @@ export default function App() {
                             </div>
                           </div>
                         )}
-                        <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={quoteStatus} onChange={e => setQuoteStatus(e.target.value as typeof quoteStatus)}>
-                          {quoteStages.map(status => <option key={status}>{status}</option>)}
-                        </select>
-                        <Input placeholder="Vendedor responsable" value={salesRep} onChange={e => setSalesRep(e.target.value)} />
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input type="number" placeholder="Vigencia dias" value={validityDays} onChange={e => setValidityDays(parseInt(e.target.value) || 15)} />
-                          <Input type="number" placeholder="Anticipo %" value={advancePercent} onChange={e => setAdvancePercent(parseInt(e.target.value) || 0)} />
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Estado comercial</label>
+                          <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={quoteStatus} onChange={e => setQuoteStatus(e.target.value as typeof quoteStatus)}>
+                            {quoteStages.map(status => <option key={status}>{status}</option>)}
+                          </select>
                         </div>
-                        <Input placeholder="Condiciones de pago" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} />
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Responsable</label>
+                          <Input placeholder="Vendedor responsable" value={salesRep} onChange={e => setSalesRep(e.target.value)} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Vigencia dias</label>
+                            <Input type="number" placeholder="15" value={validityDays} onChange={e => setValidityDays(parseInt(e.target.value) || 15)} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Anticipo %</label>
+                            <Input type="number" placeholder="60" value={advancePercent} onChange={e => setAdvancePercent(parseInt(e.target.value) || 0)} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Condiciones de pago</label>
+                          <Input placeholder="Condiciones de pago" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} />
+                        </div>
                         <div className="grid grid-cols-1 gap-2">
+                          <label className="mb-[-4px] block text-[10px] font-black uppercase tracking-widest text-slate-500">Proximo seguimiento</label>
                           <Input
                             name="follow-up-date"
                             type="date"
@@ -2135,6 +2181,7 @@ export default function App() {
                             value={nextFollowUpDate}
                             onChange={e => setNextFollowUpDate(e.target.value)}
                           />
+                          <label className="mb-[-4px] mt-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Nota interna</label>
                           <textarea
                             name="follow-up-note"
                             className="w-full min-h-[78px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600"
