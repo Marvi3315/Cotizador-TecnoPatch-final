@@ -31,8 +31,13 @@ service cloud.firestore {
         request.resource.data.uid == request.auth.uid;
     }
 
+    function ownUserDoc(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
     match /users/{userId} {
-      allow read: if activeUser() || (request.auth.uid == userId && bootstrapAdminEmail());
+      allow get: if activeUser() || ownUserDoc(userId);
+      allow list: if activeUser();
       allow create: if adminUser() || (request.auth.uid == userId && bootstrapAdminCreate());
       allow update: if adminUser();
       allow delete: if adminUser();
