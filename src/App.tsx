@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil } from 'lucide-react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +10,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast, Toaster } from 'sonner';
 
-import { firebaseReady } from './firebase';
+import { auth, authReady, firebaseReady } from './firebase';
+import { createUserByAdmin, getOrCreateUserProfile, loginWithEmail, logoutUser, saveUserProfile, subscribeToUsers } from './authStore';
 import { QuoteDocument } from './components/QuoteDocument';
 import { calculateMargin, calculateSubtotal as getQuoteSubtotal, calculateTotalCostDisplay as getTotalCostDisplay, formatSyscomPrice } from './pricing';
 import {
@@ -23,7 +25,7 @@ import {
   subscribeToMeetings,
   subscribeToQuotes
 } from './sharedStore';
-import type { Product, QuoteItem, QuoteHistoryItem, ClientRecord, MeetingRecord } from './types';
+import type { Product, QuoteItem, QuoteHistoryItem, ClientRecord, MeetingRecord, UserProfile } from './types';
 
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('tecnopatch');
@@ -38,6 +40,19 @@ export default function App() {
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [appReady, setAppReady] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  const [teamUsers, setTeamUsers] = useState<UserProfile[]>([]);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [newTeamUser, setNewTeamUser] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'ventas' as UserProfile['role']
+  });
+  const [creatingTeamUser, setCreatingTeamUser] = useState(false);
   const [isConfirmingEmpty, setIsConfirmingEmpty] = useState(false);
   const [currency, setCurrency] = useState<'MXN' | 'USD'>('MXN');
 
@@ -55,7 +70,7 @@ export default function App() {
   const [manualUnit, setManualUnit] = useState('pz');
   const [manualQuantity, setManualQuantity] = useState(1);
   const [manualUnitPrice, setManualUnitPrice] = useState(0);
-  const [activeModule, setActiveModule] = useState<'inicio' | 'cotizador' | 'clientes' | 'citas' | 'seguimiento'>('inicio');
+  const [activeModule, setActiveModule] = useState<'inicio' | 'cotizador' | 'clientes' | 'citas' | 'seguimiento' | 'usuarios'>('inicio');
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [cloudStatus, setCloudStatus] = useState(firebaseReady ? 'Conectando Firebase...' : 'Firebase sin configurar');
@@ -174,12 +189,14 @@ export default function App() {
     normalizedSearchTerm.length > 80 ? normalizedSearchTerm.split(' ').slice(0, 6).join(' ') : ''
   ].filter(Boolean)));
   const shouldShowSearchTip = activeModule === 'cotizador' && normalizedSearchTerm.length > 45;
+  const isAdmin = currentUserProfile?.role === 'admin';
   const moduleTabs = [
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'cotizador', label: 'Cotizador', icon: ShoppingCart },
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'citas', label: 'Citas', icon: CalendarDays },
-    { id: 'seguimiento', label: 'Seguimiento', icon: ClipboardList }
+    { id: 'seguimiento', label: 'Seguimiento', icon: ClipboardList },
+    ...(isAdmin ? [{ id: 'usuarios' as const, label: 'Usuarios', icon: UserPlus }] : [])
   ] as const;
   const manualTemplates = [
     { label: 'Tuberia', title: 'Tuberia conduit 3/4', category: 'Material', unit: 'm', quantity: 1 },
@@ -189,6 +206,51 @@ export default function App() {
     { label: 'Obra civil', title: 'Obra civil / canalizacion', category: 'Obra civil', unit: 'servicio', quantity: 1 },
     { label: 'Viaticos', title: 'Viaticos y traslado', category: 'Servicio', unit: 'servicio', quantity: 1 }
   ];
+
+  useEffect(() => {
+    if (!authReady || !auth) {
+      setAuthLoading(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      setAuthUser(user);
+      if (!user) {
+        setCurrentUserProfile(null);
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const profile = await getOrCreateUserProfile(user);
+        setCurrentUserProfile(profile);
+        if (!profile) {
+          toast.error('Tu usuario no esta activo. Pide acceso al administrador.');
+          await logoutUser();
+        }
+      } catch (error) {
+        console.error('Auth profile error:', error);
+        toast.error('No se pudo cargar el perfil de usuario.');
+        setCurrentUserProfile(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin || !authUser) return;
+
+    return subscribeToUsers(
+      users => setTeamUsers(users),
+      error => {
+        console.error('Users sync error:', error);
+        toast.error('No se pudo sincronizar usuarios.');
+      }
+    );
+  }, [isAdmin, authUser]);
 
   useEffect(() => {
     // Scroll listener for sticky header
@@ -205,7 +267,7 @@ export default function App() {
 
     const cloudSubscriptions: Array<() => void> = [];
 
-    if (firebaseReady) {
+    if (firebaseReady && currentUserProfile) {
       const statusTimer = window.setTimeout(() => {
         setCloudStatus(current => current === 'Conectando Firebase...' ? 'Firebase sincronizando...' : current);
       }, 3500);
@@ -265,7 +327,7 @@ export default function App() {
       }
       cloudSubscriptions.forEach(unsubscribe => unsubscribe());
     };
-  }, []);
+  }, [currentUserProfile]);
 
   // Update brands list when results change
   useEffect(() => {
@@ -315,6 +377,63 @@ export default function App() {
     .replace('Conectando ', 'Conectando ')
     .replace('requiere permisos/configuracion', 'sin permisos');
   const formatCloudError = (error: unknown) => error instanceof Error ? error.message : 'Error desconocido de Firebase';
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginForm.email.trim() || !loginForm.password) {
+      toast.error('Agrega correo y contraseña');
+      return;
+    }
+
+    try {
+      setLoginBusy(true);
+      await loginWithEmail(loginForm.email.trim(), loginForm.password);
+      setLoginForm({ email: '', password: '' });
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('No se pudo iniciar sesion. Revisa correo o contraseña.');
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const createTeamUser = async () => {
+    if (!isAdmin || !currentUserProfile) return;
+    if (!newTeamUser.email.trim() || newTeamUser.password.length < 6) {
+      toast.error('Agrega correo y contraseña de al menos 6 caracteres');
+      return;
+    }
+
+    try {
+      setCreatingTeamUser(true);
+      await createUserByAdmin({
+        email: newTeamUser.email.trim(),
+        password: newTeamUser.password,
+        name: newTeamUser.name.trim(),
+        role: newTeamUser.role,
+        createdBy: currentUserProfile.email
+      });
+      setNewTeamUser({ name: '', email: '', password: '', role: 'ventas' });
+      toast.success('Usuario creado');
+    } catch (error) {
+      console.error('Create user error:', error);
+      toast.error(error instanceof Error ? error.message : 'No se pudo crear el usuario');
+    } finally {
+      setCreatingTeamUser(false);
+    }
+  };
+
+  const toggleUserActive = async (profile: UserProfile) => {
+    if (!isAdmin) return;
+    await saveUserProfile({ ...profile, active: !profile.active });
+    toast.success(profile.active ? 'Usuario desactivado' : 'Usuario activado');
+  };
+
+  const changeUserRole = async (profile: UserProfile, role: UserProfile['role']) => {
+    if (!isAdmin) return;
+    await saveUserProfile({ ...profile, role });
+    toast.success('Rol actualizado');
+  };
 
   const filteredResults = results
     .filter(p => selectedBrand === 'Todas' || p.marca === selectedBrand)
@@ -884,7 +1003,7 @@ export default function App() {
 
   return (
     <>
-      {!appReady ? (
+      {!appReady || authLoading ? (
         <div className="fixed inset-0 z-[100] bg-[#0f172a] flex flex-col items-center justify-center text-white">
           <div className="relative">
             <div className="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center font-black text-4xl shadow-2xl animate-bounce">T</div>
@@ -895,6 +1014,55 @@ export default function App() {
             <div className="w-32 h-1 bg-slate-800 rounded-full overflow-hidden">
               <div className="w-full h-full bg-blue-500 animate-[loading_1.5s_ease-in-out_infinite]"></div>
             </div>
+          </div>
+        </div>
+      ) : !authReady || !authUser || !currentUserProfile ? (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
+          <Toaster position="top-center" richColors duration={2500} closeButton={false} />
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <span className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-200 flex items-center justify-center overflow-hidden shadow-sm">
+                <img src="/logo.png" alt="TecnoPatch" className="w-full h-full object-contain" />
+              </span>
+              <div>
+                <h1 className="text-2xl font-black tracking-tight text-slate-900">TecnoPatch</h1>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-600">Acceso interno</p>
+              </div>
+            </div>
+
+            {!authReady ? (
+              <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-700">
+                Firebase Auth no esta configurado. Revisa variables VITE_FIREBASE_* y habilita Email/Password en Firebase.
+              </div>
+            ) : (
+              <form onSubmit={handleLogin} className="mt-6 space-y-4">
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Correo</label>
+                  <Input
+                    name="login-email"
+                    type="email"
+                    autoComplete="email"
+                    value={loginForm.email}
+                    onChange={e => setLoginForm({ ...loginForm, email: e.target.value })}
+                    placeholder="usuario@tecnopatch.com.mx"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Contraseña</label>
+                  <Input
+                    name="login-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={loginForm.password}
+                    onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
+                    placeholder="Contraseña"
+                  />
+                </div>
+                <Button type="submit" disabled={loginBusy} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">
+                  {loginBusy ? 'Entrando...' : 'Entrar al sistema'}
+                </Button>
+              </form>
+            )}
           </div>
         </div>
       ) : (
@@ -1105,6 +1273,16 @@ export default function App() {
         {cloudStatus}
       </span>
       <span className="text-[9px] text-slate-500 font-bold mt-0.5">TC: ${exchangeRate.toFixed(2)}</span>
+    </div>
+
+    <div className="hidden lg:flex items-center gap-2 shrink-0 border-l border-slate-200 pl-3">
+      <div className="text-right leading-tight">
+        <div className="text-[10px] font-black text-slate-900">{currentUserProfile.name || currentUserProfile.email}</div>
+        <div className="text-[9px] font-black uppercase tracking-wider text-blue-600">{currentUserProfile.role}</div>
+      </div>
+      <Button variant="ghost" size="sm" className="h-8 px-2 text-[10px] font-black" onClick={() => logoutUser()}>
+        Salir
+      </Button>
     </div>
   </div>
 </header>
@@ -2141,6 +2319,7 @@ export default function App() {
                           {activeModule === 'clientes' && 'Clientes'}
                           {activeModule === 'citas' && 'Agenda Comercial'}
                           {activeModule === 'seguimiento' && 'Seguimiento de Cotizaciones'}
+                          {activeModule === 'usuarios' && 'Usuarios y Accesos'}
                         </h1>
                         <p className="text-xs text-slate-500">Busqueda y resumen rapido del flujo comercial.</p>
                       </div>
@@ -2754,6 +2933,116 @@ export default function App() {
                           </div>
                         </div>
                       ))}
+                    </section>
+                  </div>
+                )}
+
+                {activeModule === 'usuarios' && isAdmin && (
+                  <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5">
+                    <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
+                      <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <UserPlus size={20} className="text-blue-600" /> Nuevo Usuario
+                      </h2>
+                      <div className="mt-4 space-y-3">
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Nombre</label>
+                          <Input
+                            name="team-user-name"
+                            placeholder="Ej. Raul Ventas"
+                            value={newTeamUser.name}
+                            onChange={e => setNewTeamUser({ ...newTeamUser, name: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Correo de acceso</label>
+                          <Input
+                            name="team-user-email"
+                            type="email"
+                            autoComplete="off"
+                            placeholder="usuario@tecnopatch.com.mx"
+                            value={newTeamUser.email}
+                            onChange={e => setNewTeamUser({ ...newTeamUser, email: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Contraseña temporal</label>
+                          <Input
+                            name="team-user-password"
+                            type="password"
+                            autoComplete="new-password"
+                            placeholder="Minimo 6 caracteres"
+                            value={newTeamUser.password}
+                            onChange={e => setNewTeamUser({ ...newTeamUser, password: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Rol</label>
+                          <select
+                            name="team-user-role"
+                            className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                            value={newTeamUser.role}
+                            onChange={e => setNewTeamUser({ ...newTeamUser, role: e.target.value as UserProfile['role'] })}
+                          >
+                            <option value="ventas">Ventas</option>
+                            <option value="lectura">Solo lectura</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        </div>
+                        <Button onClick={createTeamUser} disabled={creatingTeamUser} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">
+                          <UserPlus size={16} className="mr-2" />
+                          {creatingTeamUser ? 'Creando...' : 'Crear Usuario'}
+                        </Button>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          El usuario queda activo en Firebase Auth y en la lista de accesos. Si alguien sale del equipo, desactivalo aqui.
+                        </p>
+                      </div>
+                    </section>
+
+                    <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                        <h2 className="text-lg font-black text-slate-900">Equipo TecnoPatch</h2>
+                        <Badge variant="secondary">{teamUsers.length} usuarios</Badge>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {teamUsers.length === 0 ? (
+                          <div className="p-10 text-center text-slate-400 font-bold">Aun no hay usuarios registrados.</div>
+                        ) : teamUsers.map(user => (
+                          <div key={user.uid} className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-black text-slate-900">{user.name || user.email}</h3>
+                                <Badge className={user.active ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}>
+                                  {user.active ? 'Activo' : 'Inactivo'}
+                                </Badge>
+                                <Badge variant="secondary">{user.role}</Badge>
+                              </div>
+                              <p className="text-sm text-slate-500">{user.email}</p>
+                              <p className="mt-1 text-[11px] text-slate-400">Alta: {new Date(user.createdAt).toLocaleString('es-MX')}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <select
+                                className="h-9 rounded-md border border-slate-200 px-2 text-xs font-bold"
+                                value={user.role}
+                                onChange={e => changeUserRole(user, e.target.value as UserProfile['role'])}
+                                disabled={user.uid === currentUserProfile.uid}
+                              >
+                                <option value="ventas">Ventas</option>
+                                <option value="lectura">Solo lectura</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              <Button
+                                variant={user.active ? 'outline' : 'secondary'}
+                                size="sm"
+                                className="font-black"
+                                onClick={() => toggleUserActive(user)}
+                                disabled={user.uid === currentUserProfile.uid}
+                              >
+                                {user.active ? 'Desactivar' : 'Activar'}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </section>
                   </div>
                 )}

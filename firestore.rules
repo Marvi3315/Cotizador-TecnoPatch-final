@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function activeUser() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        userProfile().data.active == true;
+    }
+
+    function adminUser() {
+      return activeUser() && userProfile().data.role == 'admin';
+    }
+
+    function bootstrapAdmin() {
+      return signedIn() &&
+        request.auth.token.email in ['admin@tecnopatch.com.mx'] &&
+        request.resource.data.role == 'admin' &&
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read: if activeUser();
+      allow create: if adminUser() || (request.auth.uid == userId && bootstrapAdmin());
+      allow update: if adminUser();
+      allow delete: if adminUser();
+    }
+
+    match /quoteHistory/{doc} {
+      allow read: if activeUser();
+      allow write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+
+    match /clients/{doc} {
+      allow read: if activeUser();
+      allow write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+
+    match /meetings/{doc} {
+      allow read: if activeUser();
+      allow write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+  }
+}

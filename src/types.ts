@@ -92,3 +92,15 @@ export interface MeetingRecord {
   status: 'Programada' | 'Realizada' | 'Reagendada' | 'Cancelada';
   notes: string;
 }
+
+export interface UserProfile {
+  id: string;
+  uid: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'ventas' | 'lectura';
+  active: boolean;
+  createdAt: string;
+  createdBy?: string;
+  lastLoginAt?: string;
+}
