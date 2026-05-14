@@ -48,7 +48,11 @@ export async function getOrCreateUserProfile(user: User): Promise<UserProfile | 
 
   if (snapshot.exists()) {
     const profile = { id: snapshot.id, ...snapshot.data() } as UserProfile;
-    await setDoc(userRef, { ...profile, lastLoginAt: new Date().toISOString() }, { merge: true });
+    try {
+      await setDoc(userRef, { lastLoginAt: new Date().toISOString() }, { merge: true });
+    } catch (error) {
+      console.warn('No se pudo actualizar ultimo acceso del usuario:', error);
+    }
     return profile.active ? profile : null;
   }
 
