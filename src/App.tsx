@@ -27,6 +27,24 @@ import {
 } from './sharedStore';
 import type { Product, QuoteItem, QuoteHistoryItem, ClientRecord, MeetingRecord, UserProfile } from './types';
 
+const buildNextQuoteNumber = (history: QuoteHistoryItem[] = []) => {
+  const year = new Date().getFullYear();
+  const maxNumber = history.reduce((max, quote) => {
+    const match = quote.quoteNumber?.match(new RegExp(`^COT-${year}-(\\d+)$`));
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return `COT-${year}-${String(maxNumber + 1).padStart(4, '0')}`;
+};
+
+const cleanFileNamePart = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 70);
+
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('tecnopatch');
   const [loading, setLoading] = useState(false);
@@ -122,7 +140,8 @@ export default function App() {
   const [brands, setBrands] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('');
   const leftSectionRef = useRef<HTMLElement>(null);
-  const quoteNumber = useRef(`COT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`).current;
+  const quoteNumberAuto = useRef(true);
+  const [quoteNumber, setQuoteNumber] = useState(() => buildNextQuoteNumber());
   const syscomItemCount = quoteItems.filter(item => !item.product.isManual).length;
   const manualItemCount = quoteItems.filter(item => item.product.isManual).length;
   const quoteUnitCount = quoteItems.reduce((acc, item) => acc + item.quantity, 0);
@@ -328,6 +347,11 @@ export default function App() {
       cloudSubscriptions.forEach(unsubscribe => unsubscribe());
     };
   }, [currentUserProfile]);
+
+  useEffect(() => {
+    if (!quoteNumberAuto.current || quoteItems.length > 0) return;
+    setQuoteNumber(buildNextQuoteNumber(quoteHistory));
+  }, [quoteHistory, quoteItems.length]);
 
   // Update brands list when results change
   useEffect(() => {
@@ -841,11 +865,28 @@ export default function App() {
 
   const margin = calculateMargin(subtotal, calculateTotalCostDisplay(), includeIva);
 
-  const saveQuoteToHistory = async () => {
+  const getPdfFileName = () => {
+    const clientLabel = cleanFileNamePart(clientCompany || clientName || 'sin-cliente') || 'sin-cliente';
+    const folioLabel = cleanFileNamePart(quoteNumber || buildNextQuoteNumber(quoteHistory));
+    return `cot-${folioLabel}-${clientLabel}`;
+  };
+
+  const printQuotePdf = (delay = 0) => {
+    const previousTitle = document.title;
+    document.title = getPdfFileName();
+    window.setTimeout(() => {
+      window.print();
+      window.setTimeout(() => {
+        document.title = previousTitle;
+      }, 1200);
+    }, delay);
+  };
+
+  const saveQuoteToHistory = async ({ printAfter = true }: { printAfter?: boolean } = {}) => {
     if (quoteItems.length === 0) return;
     const newQuote: QuoteHistoryItem = {
       id: Math.random().toString(36).substring(2, 9),
-      quoteNumber,
+      quoteNumber: quoteNumber.trim() || buildNextQuoteNumber(quoteHistory),
       date: new Date().toLocaleString(),
       items: [...quoteItems],
       subtotal,
@@ -880,7 +921,7 @@ export default function App() {
       await saveSharedQuote(newQuote);
       setCloudStatus('Firebase guardado');
       toast.success('Cotizacion guardada en historial compartido');
-      setTimeout(() => window.print(), 500);
+      if (printAfter) printQuotePdf(500);
     } catch (error) {
       console.error('Error saving quote:', error);
       setCloudStatus('Firebase no guardo');
@@ -938,6 +979,8 @@ export default function App() {
 
   const restoreQuote = (hist: any) => {
     setQuoteItems(hist.items);
+    quoteNumberAuto.current = false;
+    setQuoteNumber(hist.quoteNumber || buildNextQuoteNumber(quoteHistory));
     setIncludeIva(hist.includeTax);
     setClientName(hist.clientName || '');
     setClientCompany(hist.clientCompany || '');
@@ -1812,6 +1855,8 @@ export default function App() {
                           className="bg-red-600 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg shadow-lg shadow-red-200"
                           onClick={() => {
                             setQuoteItems([]);
+                            quoteNumberAuto.current = true;
+                            setQuoteNumber(buildNextQuoteNumber(quoteHistory));
                             setIsConfirmingEmpty(false);
                             toast.success('Cotizacion vaciada');
                           }}
@@ -2074,8 +2119,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {quoteItems.length > 0 && (
-                    <div className="space-y-4">
+                  <div className="space-y-4">
                       {/* SETTINGS BLOCK */}
                       <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl space-y-4 shadow-sm">
                         <h4 className="text-[11px] font-bold text-blue-800 uppercase tracking-widest flex items-center gap-2">
@@ -2119,6 +2163,19 @@ export default function App() {
                         <h4 className="text-[11px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2">
                           <FileText size={14} /> Datos del Cliente
                         </h4>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Folio de cotizacion</label>
+                          <Input
+                            name="quote-number"
+                            placeholder="COT-2026-0001"
+                            className="h-9 text-sm font-black uppercase tracking-wider"
+                            value={quoteNumber}
+                            onChange={e => {
+                              quoteNumberAuto.current = false;
+                              setQuoteNumber(e.target.value.toUpperCase());
+                            }}
+                          />
+                        </div>
                         {clients.length > 0 && (
                           <select
                             name="quote-saved-client"
@@ -2207,7 +2264,6 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  )}
                 </div>
 
                 <div className="p-3 bg-slate-900 text-white mt-auto border-t border-slate-800 shrink-0 shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.3)]">
@@ -2264,8 +2320,7 @@ export default function App() {
                       className="flex-1 p-2.5 bg-white hover:bg-slate-100 text-slate-900 h-auto rounded-lg font-black uppercase tracking-widest flex gap-2 items-center justify-center text-[10px] shadow-lg shadow-black/5 border border-slate-200 active:scale-95 transition-all"
                       disabled={quoteItems.length === 0}
                       onClick={() => {
-                        saveQuoteToHistory();
-                        setTimeout(() => window.print(), 300);
+                        saveQuoteToHistory({ printAfter: true });
                       }}
                     >
                       <Printer size={15} /> Imprimir
@@ -3121,7 +3176,7 @@ export default function App() {
               </div>
               <div className="p-4 bg-white border-t flex flex-col sm:flex-row justify-end gap-3 shrink-0">
                 <Button variant="outline" onClick={() => setShowPreview(false)} className="w-full sm:w-auto order-2 sm:order-1">Cerrar</Button>
-                <Button onClick={() => { setShowPreview(false); setTimeout(() => window.print(), 350); }} className="w-full sm:w-auto order-1 sm:order-2 bg-blue-600 hover:bg-blue-700">
+                <Button onClick={() => { setShowPreview(false); printQuotePdf(350); }} className="w-full sm:w-auto order-1 sm:order-2 bg-blue-600 hover:bg-blue-700">
                   <Printer className="mr-2" size={16} /> Imprimir PDF
                 </Button>
               </div>
