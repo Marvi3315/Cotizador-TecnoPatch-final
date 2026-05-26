@@ -51,6 +51,12 @@ const cleanFileNamePart = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 70);
 
+const getLocalDateStamp = () => {
+  const date = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
 const inventoryTypes: Array<{ value: ClientInventoryType; label: string }> = [
   { value: 'dispositivo', label: 'Dispositivo' },
   { value: 'red', label: 'Red' },
@@ -1010,12 +1016,20 @@ export default function App() {
 
   const printQuotePdf = (delay = 0) => {
     const previousTitle = document.title;
-    document.title = getPdfFileName();
+    const pdfFileName = getPdfFileName();
+    document.title = pdfFileName;
+
+    const restoreTitle = () => {
+      document.title = previousTitle;
+      window.removeEventListener('afterprint', restoreTitle);
+    };
+
+    window.addEventListener('afterprint', restoreTitle);
     window.setTimeout(() => {
       window.print();
       window.setTimeout(() => {
-        document.title = previousTitle;
-      }, 1200);
+        restoreTitle();
+      }, 3000);
     }, delay);
   };
 
@@ -1275,7 +1289,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `inventario-${cleanFileNamePart(selectedInventoryClient.company || selectedInventoryClient.name)}.csv`;
+    link.download = `inventario-${cleanFileNamePart(selectedInventoryClient.company || selectedInventoryClient.name)}-${getLocalDateStamp()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     await logInventoryAction({
@@ -1608,7 +1622,7 @@ export default function App() {
       doc.text(`Pagina ${page} de ${pages}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
     }
 
-    doc.save(`inventario-${cleanFileNamePart(clientLabel)}.pdf`);
+    doc.save(`inventario-${cleanFileNamePart(clientLabel)}-${getLocalDateStamp()}.pdf`);
     await logInventoryAction({
       id: 'reporte',
       clientId: selectedInventoryClient.id,
