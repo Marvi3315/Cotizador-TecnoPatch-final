@@ -94,6 +94,18 @@ const emptyInventoryRecord = () => ({
   clientNotes: ''
 });
 
+type InventoryDraftRow = ReturnType<typeof emptyInventoryRecord>;
+
+const normalizeInventoryType = (value: string): ClientInventoryType => {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '-');
+  return inventoryTypes.find(type => type.value === normalized || type.label.toLowerCase() === value.trim().toLowerCase())?.value || 'dispositivo';
+};
+
+const normalizeInventoryStatus = (value: string): ClientInventoryStatus => {
+  const normalized = value.trim().toLowerCase();
+  return inventoryStatuses.find(status => status.value === normalized || status.label.toLowerCase() === normalized)?.value || 'activo';
+};
+
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('tecnopatch');
   const [loading, setLoading] = useState(false);
@@ -151,6 +163,9 @@ export default function App() {
   const [includeInventoryPasswords, setIncludeInventoryPasswords] = useState(false);
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [newInventoryRecord, setNewInventoryRecord] = useState(emptyInventoryRecord());
+  const [bulkInventoryRows, setBulkInventoryRows] = useState<InventoryDraftRow[]>([emptyInventoryRecord(), emptyInventoryRecord(), emptyInventoryRecord()]);
+  const [bulkPasteText, setBulkPasteText] = useState('');
+  const [savingBulkInventory, setSavingBulkInventory] = useState(false);
   const [cloudStatus, setCloudStatus] = useState(firebaseReady ? 'Conectando Firebase...' : 'Firebase sin configurar');
   const [quoteStatus, setQuoteStatus] = useState<'Borrador' | 'Enviada' | 'Seguimiento' | 'Aceptada' | 'Rechazada'>('Borrador');
   const [selectedFollowQuoteId, setSelectedFollowQuoteId] = useState('');
@@ -1268,6 +1283,108 @@ export default function App() {
       clientName: selectedInventoryClient.company || selectedInventoryClient.name,
       name: 'Reporte CSV'
     }, includeInventoryPasswords ? 'Reporte descargado con contraseñas' : 'Reporte descargado sin contraseñas');
+  };
+
+  const updateBulkInventoryRow = (index: number, patch: Partial<InventoryDraftRow>) => {
+    setBulkInventoryRows(rows => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  };
+
+  const addBulkInventoryRow = () => {
+    setBulkInventoryRows(rows => [...rows, emptyInventoryRecord()]);
+  };
+
+  const duplicateBulkInventoryRow = (index: number) => {
+    setBulkInventoryRows(rows => {
+      const next = [...rows];
+      next.splice(index + 1, 0, { ...rows[index] });
+      return next;
+    });
+  };
+
+  const removeBulkInventoryRow = (index: number) => {
+    setBulkInventoryRows(rows => rows.length > 1 ? rows.filter((_, rowIndex) => rowIndex !== index) : [emptyInventoryRecord()]);
+  };
+
+  const applyBulkInventoryPaste = () => {
+    const rows = bulkPasteText
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const cells = line.split(/\t|,/).map(cell => cell.trim());
+        return {
+          type: normalizeInventoryType(cells[0] || ''),
+          name: cells[1] || '',
+          brand: cells[2] || '',
+          model: cells[3] || '',
+          serialNumber: cells[4] || '',
+          macAddress: (cells[5] || '').toUpperCase(),
+          ipAddress: cells[6] || '',
+          accessUrl: cells[7] || '',
+          username: cells[8] || '',
+          password: canAccessInventorySecrets ? (cells[9] || '') : '',
+          location: cells[10] || '',
+          responsible: cells[11] || '',
+          status: normalizeInventoryStatus(cells[12] || ''),
+          registeredAt: cells[13] || new Date().toLocaleDateString('en-CA'),
+          clientNotes: cells[14] || '',
+          internalNotes: cells[15] || ''
+        };
+      });
+
+    if (rows.length === 0) {
+      toast.error('Pega al menos una fila con datos.');
+      return;
+    }
+
+    setBulkInventoryRows(rows);
+    setBulkPasteText('');
+    toast.success(`${rows.length} filas listas para revisar`);
+  };
+
+  const saveBulkInventoryRecords = async () => {
+    if (!selectedInventoryClient) {
+      toast.error('Selecciona un cliente para guardar los registros.');
+      return;
+    }
+    if (!canManageInventory) {
+      toast.error('Tu usuario no tiene permiso para modificar inventario.');
+      return;
+    }
+
+    const validRows = bulkInventoryRows.filter(row => row.name.trim());
+    if (validRows.length === 0) {
+      toast.error('Agrega al menos una fila con nombre de dispositivo o servicio.');
+      return;
+    }
+
+    try {
+      setSavingBulkInventory(true);
+      setCloudStatus('Guardando Firebase...');
+      for (const row of validRows) {
+        const record: ClientInventoryRecord = {
+          id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          clientId: selectedInventoryClient.id,
+          clientName: selectedInventoryClient.company || selectedInventoryClient.name,
+          ...row,
+          password: canAccessInventorySecrets ? row.password : '',
+          updatedAt: new Date().toISOString(),
+          createdBy: currentUserProfile?.name,
+          updatedBy: currentUserProfile?.name
+        };
+        await saveSharedInventoryRecord(record);
+        await logInventoryAction(record, 'Registro creado por carga rapida');
+      }
+      setCloudStatus('Firebase guardado');
+      toast.success(`${validRows.length} registros guardados`);
+      setBulkInventoryRows([emptyInventoryRecord(), emptyInventoryRecord(), emptyInventoryRecord()]);
+    } catch (error) {
+      console.error('Error saving bulk inventory:', error);
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo guardar la carga rapida: ${formatCloudError(error)}`);
+    } finally {
+      setSavingBulkInventory(false);
+    }
   };
 
   const printInventoryReport = async () => {
@@ -3527,6 +3644,104 @@ export default function App() {
                             <p className="text-[10px] font-black uppercase tracking-widest text-red-700">Baja</p>
                             <p className="text-2xl font-black text-red-700">{inventorySummary.inactive}</p>
                           </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                          <div>
+                            <h3 className="font-black text-slate-900 flex items-center gap-2">
+                              <Package size={18} className="text-blue-600" /> Carga rapida en tabla
+                            </h3>
+                            <p className="text-xs text-slate-500">Captura varios equipos o pega filas desde Excel: tipo, nombre, marca, modelo, serie, MAC, IP, URL, usuario, contraseña, ubicación, responsable, estado, fecha, notas cliente, notas internas.</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" onClick={addBulkInventoryRow} disabled={!selectedInventoryClientId}>
+                              <Plus size={15} className="mr-2" /> Fila
+                            </Button>
+                            <Button onClick={saveBulkInventoryRecords} disabled={!selectedInventoryClientId || savingBulkInventory || !canManageInventory} className="bg-blue-600 hover:bg-blue-700 text-white">
+                              <Save size={15} className="mr-2" /> {savingBulkInventory ? 'Guardando...' : 'Guardar todos'}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="p-4 border-b border-slate-100 grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-2">
+                          <textarea
+                            className="min-h-[64px] rounded-lg border border-slate-200 p-3 text-xs outline-none focus:ring-1 focus:ring-blue-600"
+                            placeholder="Pega filas desde Excel/Sheets. Orden: tipo, nombre, marca, modelo, serie, MAC, IP, URL, usuario, contraseña, ubicación, responsable, estado, fecha, notas cliente, notas internas."
+                            value={bulkPasteText}
+                            onChange={e => setBulkPasteText(e.target.value)}
+                          />
+                          <Button variant="secondary" onClick={applyBulkInventoryPaste} disabled={!bulkPasteText.trim()} className="font-black">
+                            Aplicar pegado
+                          </Button>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[1320px] text-xs">
+                            <thead className="bg-slate-50 text-slate-500">
+                              <tr>
+                                <th className="px-2 py-2 text-left font-black uppercase">Tipo</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Nombre</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Marca</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Modelo</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Serie</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">MAC</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">IP</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">URL</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Usuario</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Contraseña</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Ubicacion</th>
+                                <th className="px-2 py-2 text-left font-black uppercase">Estado</th>
+                                <th className="px-2 py-2 text-right font-black uppercase">Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {bulkInventoryRows.map((row, index) => (
+                                <tr key={index} className="hover:bg-slate-50">
+                                  <td className="px-2 py-2">
+                                    <select className="h-9 w-32 rounded-md border border-slate-200 px-2" value={row.type} onChange={e => updateBulkInventoryRow(index, { type: e.target.value as ClientInventoryType })}>
+                                      {inventoryTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+                                    </select>
+                                  </td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-48 text-xs" value={row.name} onChange={e => updateBulkInventoryRow(index, { name: e.target.value })} placeholder="Nombre" /></td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-32 text-xs" value={row.brand} onChange={e => updateBulkInventoryRow(index, { brand: e.target.value })} placeholder="Marca" /></td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-36 text-xs" value={row.model} onChange={e => updateBulkInventoryRow(index, { model: e.target.value })} placeholder="Modelo" /></td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-36 text-xs" value={row.serialNumber} onChange={e => updateBulkInventoryRow(index, { serialNumber: e.target.value })} placeholder="Serie" /></td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-36 text-xs" value={row.macAddress} onChange={e => updateBulkInventoryRow(index, { macAddress: e.target.value.toUpperCase() })} placeholder="MAC" /></td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-32 text-xs" value={row.ipAddress} onChange={e => updateBulkInventoryRow(index, { ipAddress: e.target.value })} placeholder="IP" /></td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-40 text-xs" value={row.accessUrl} onChange={e => updateBulkInventoryRow(index, { accessUrl: e.target.value })} placeholder="URL/puerto" /></td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-32 text-xs" value={row.username} onChange={e => updateBulkInventoryRow(index, { username: e.target.value })} placeholder="Usuario" /></td>
+                                  <td className="px-2 py-2">
+                                    <Input
+                                      className="h-9 w-36 text-xs"
+                                      type="password"
+                                      value={row.password}
+                                      disabled={!canAccessInventorySecrets}
+                                      onChange={e => updateBulkInventoryRow(index, { password: e.target.value })}
+                                      placeholder={canAccessInventorySecrets ? 'Contraseña' : 'Admin'}
+                                    />
+                                  </td>
+                                  <td className="px-2 py-2"><Input className="h-9 w-36 text-xs" value={row.location} onChange={e => updateBulkInventoryRow(index, { location: e.target.value })} placeholder="Ubicacion" /></td>
+                                  <td className="px-2 py-2">
+                                    <select className="h-9 w-32 rounded-md border border-slate-200 px-2" value={row.status} onChange={e => updateBulkInventoryRow(index, { status: e.target.value as ClientInventoryStatus })}>
+                                      {inventoryStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
+                                    </select>
+                                  </td>
+                                  <td className="px-2 py-2">
+                                    <div className="flex justify-end gap-1">
+                                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar fila" onClick={() => duplicateBulkInventoryRow(index)}>
+                                        <Copy size={13} />
+                                      </Button>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600" title="Eliminar fila" onClick={() => removeBulkInventoryRow(index)}>
+                                        <Trash size={13} />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
 
