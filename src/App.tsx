@@ -50,6 +50,14 @@ const cleanFileNamePart = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 70);
 
+const escapeHtml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const inventoryTypes: Array<{ value: ClientInventoryType; label: string }> = [
   { value: 'dispositivo', label: 'Dispositivo' },
   { value: 'red', label: 'Red' },
@@ -1390,63 +1398,322 @@ export default function App() {
   const printInventoryReport = async () => {
     if (!selectedInventoryClient) return;
 
-    const rows = filteredInventoryRecords.map(record => `
-      <tr>
-        <td>${record.type}</td>
-        <td><strong>${record.name}</strong><br>${record.brand} ${record.model}</td>
-        <td>${record.serialNumber || '-'}</td>
-        <td>${record.ipAddress || '-'}</td>
-        <td>${record.macAddress || '-'}</td>
-        <td>${record.accessUrl || '-'}</td>
-        <td>${record.username || '-'}</td>
-        <td>${includeInventoryPasswords && canAccessInventorySecrets ? (record.password || '-') : 'Oculta'}</td>
-        <td>${record.location || '-'}</td>
-        <td>${record.responsible || '-'}</td>
-        <td>${record.status}</td>
-        <td>${record.clientNotes || '-'}</td>
-      </tr>
+    const clientLabel = selectedInventoryClient.company || selectedInventoryClient.name;
+    const includePasswords = includeInventoryPasswords && canAccessInventorySecrets;
+    const statusLabel = (value: ClientInventoryStatus) => inventoryStatuses.find(status => status.value === value)?.label || value;
+    const typeLabel = (value: ClientInventoryType) => inventoryTypes.find(type => type.value === value)?.label || value;
+    const summaryCards = [
+      ['Registros', inventorySummary.total],
+      ['Activos', inventorySummary.active],
+      ['Mantenimiento', inventorySummary.maintenance],
+      ['Baja', inventorySummary.inactive]
+    ].map(([label, value]) => `
+      <div class="summary-card">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
     `).join('');
 
-    const reportWindow = window.open('', '_blank');
-    if (!reportWindow) return;
-    reportWindow.document.write(`
+    const recordCards = filteredInventoryRecords.map((record, index) => `
+      <article class="record-card">
+        <div class="record-head">
+          <div>
+            <span class="record-index">Registro ${index + 1}</span>
+            <h2>${escapeHtml(record.name || 'Registro tecnico')}</h2>
+            <p>${escapeHtml(typeLabel(record.type))}${record.brand || record.model ? ` · ${escapeHtml([record.brand, record.model].filter(Boolean).join(' '))}` : ''}</p>
+          </div>
+          <span class="status">${escapeHtml(statusLabel(record.status))}</span>
+        </div>
+
+        <div class="info-grid">
+          <div><span>Marca</span><strong>${escapeHtml(record.brand || '-')}</strong></div>
+          <div><span>Modelo</span><strong>${escapeHtml(record.model || '-')}</strong></div>
+          <div><span>Numero de serie</span><strong>${escapeHtml(record.serialNumber || '-')}</strong></div>
+          <div><span>Direccion MAC</span><strong>${escapeHtml(record.macAddress || '-')}</strong></div>
+          <div><span>Direccion IP</span><strong>${escapeHtml(record.ipAddress || '-')}</strong></div>
+          <div><span>Puerto o URL de acceso</span><strong>${escapeHtml(record.accessUrl || '-')}</strong></div>
+          <div><span>Usuario</span><strong>${escapeHtml(record.username || '-')}</strong></div>
+          <div><span>Contrasena</span><strong>${escapeHtml(includePasswords ? (record.password || '-') : 'Oculta por seguridad')}</strong></div>
+          <div><span>Ubicacion fisica</span><strong>${escapeHtml(record.location || '-')}</strong></div>
+          <div><span>Responsable</span><strong>${escapeHtml(record.responsible || '-')}</strong></div>
+          <div><span>Fecha de instalacion / registro</span><strong>${escapeHtml(record.registeredAt || '-')}</strong></div>
+          <div><span>Ultima actualizacion</span><strong>${escapeHtml(record.updatedAt ? new Date(record.updatedAt).toLocaleString() : '-')}</strong></div>
+        </div>
+
+        <div class="notes">
+          <span>Notas visibles para cliente</span>
+          <p>${escapeHtml(record.clientNotes || 'Sin notas visibles para cliente.')}</p>
+        </div>
+      </article>
+    `).join('');
+
+    const reportHtml = `
+      <!doctype html>
       <html>
         <head>
-          <title>inventario-${cleanFileNamePart(selectedInventoryClient.company || selectedInventoryClient.name)}</title>
+          <meta charset="utf-8" />
+          <title>inventario-${escapeHtml(cleanFileNamePart(clientLabel))}</title>
           <style>
-            body{font-family:Arial,sans-serif;color:#0f172a;margin:32px}
-            header{display:flex;justify-content:space-between;border-bottom:4px solid #2563eb;padding-bottom:16px;margin-bottom:24px}
-            h1{margin:0;font-size:28px}
-            .brand{font-weight:900;color:#2563eb;letter-spacing:.18em;font-size:12px}
-            table{width:100%;border-collapse:collapse;font-size:11px}
-            th{background:#1d4ed8;color:white;text-align:left;padding:8px}
-            td{border-bottom:1px solid #e2e8f0;padding:8px;vertical-align:top}
-            .meta{color:#64748b;font-size:12px;line-height:1.5}
+            @page { size: Letter portrait; margin: 14mm; }
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              background: #ffffff;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+              line-height: 1.38;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .page { width: 100%; }
+            .hero {
+              background: #0f172a;
+              color: #ffffff;
+              border-radius: 16px;
+              padding: 24px;
+              display: grid;
+              grid-template-columns: 1fr auto;
+              gap: 24px;
+              align-items: start;
+              border-bottom: 6px solid #2563eb;
+            }
+            .brand {
+              color: #38bdf8;
+              font-size: 11px;
+              font-weight: 900;
+              letter-spacing: 0.22em;
+              text-transform: uppercase;
+              margin-bottom: 8px;
+            }
+            h1 {
+              margin: 0;
+              font-size: 30px;
+              letter-spacing: 0;
+            }
+            .client-name {
+              margin-top: 10px;
+              font-size: 18px;
+              font-weight: 800;
+            }
+            .client-meta {
+              margin-top: 6px;
+              color: #cbd5e1;
+              font-size: 12px;
+            }
+            .report-meta {
+              min-width: 210px;
+              color: #dbeafe;
+              font-size: 12px;
+              line-height: 1.7;
+              text-align: right;
+            }
+            .summary {
+              margin: 18px 0;
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 10px;
+            }
+            .summary-card {
+              border: 1px solid #dbe4f0;
+              border-radius: 12px;
+              padding: 12px;
+              background: #f8fafc;
+            }
+            .summary-card span {
+              display: block;
+              color: #64748b;
+              font-size: 10px;
+              font-weight: 900;
+              letter-spacing: 0.14em;
+              text-transform: uppercase;
+            }
+            .summary-card strong {
+              display: block;
+              margin-top: 5px;
+              font-size: 22px;
+              color: #0f172a;
+            }
+            .section-title {
+              margin: 22px 0 12px;
+              color: #2563eb;
+              font-size: 12px;
+              font-weight: 900;
+              letter-spacing: 0.18em;
+              text-transform: uppercase;
+            }
+            .record-card {
+              break-inside: avoid;
+              page-break-inside: avoid;
+              border: 1px solid #dbe4f0;
+              border-radius: 14px;
+              margin-bottom: 14px;
+              overflow: hidden;
+              background: #ffffff;
+            }
+            .record-head {
+              display: flex;
+              justify-content: space-between;
+              gap: 16px;
+              padding: 14px 16px;
+              background: #f8fafc;
+              border-bottom: 1px solid #e2e8f0;
+            }
+            .record-index {
+              display: inline-block;
+              color: #2563eb;
+              font-size: 10px;
+              font-weight: 900;
+              letter-spacing: 0.16em;
+              text-transform: uppercase;
+              margin-bottom: 4px;
+            }
+            h2 {
+              margin: 0;
+              font-size: 18px;
+              color: #0f172a;
+              overflow-wrap: anywhere;
+            }
+            .record-head p {
+              margin: 4px 0 0;
+              color: #64748b;
+              font-size: 12px;
+              overflow-wrap: anywhere;
+            }
+            .status {
+              align-self: start;
+              border-radius: 999px;
+              background: #dbeafe;
+              color: #1d4ed8;
+              padding: 6px 10px;
+              font-size: 10px;
+              font-weight: 900;
+              letter-spacing: 0.12em;
+              text-transform: uppercase;
+              white-space: nowrap;
+            }
+            .info-grid {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 0;
+            }
+            .info-grid div {
+              min-height: 62px;
+              padding: 11px 14px;
+              border-right: 1px solid #e2e8f0;
+              border-bottom: 1px solid #e2e8f0;
+            }
+            .info-grid div:nth-child(3n) { border-right: 0; }
+            .info-grid span,
+            .notes span {
+              display: block;
+              color: #64748b;
+              font-size: 9px;
+              font-weight: 900;
+              letter-spacing: 0.12em;
+              text-transform: uppercase;
+              margin-bottom: 5px;
+            }
+            .info-grid strong {
+              display: block;
+              font-size: 12px;
+              color: #0f172a;
+              overflow-wrap: anywhere;
+              white-space: normal;
+            }
+            .notes {
+              padding: 14px 16px;
+            }
+            .notes p {
+              margin: 0;
+              color: #334155;
+              font-size: 12px;
+              text-align: justify;
+              overflow-wrap: anywhere;
+              white-space: pre-wrap;
+            }
+            .empty {
+              border: 1px dashed #cbd5e1;
+              border-radius: 14px;
+              padding: 28px;
+              color: #64748b;
+              font-weight: 700;
+              text-align: center;
+            }
+            .footer {
+              margin-top: 20px;
+              padding-top: 12px;
+              border-top: 1px solid #e2e8f0;
+              color: #64748b;
+              font-size: 10px;
+              display: flex;
+              justify-content: space-between;
+              gap: 16px;
+            }
+            @media print {
+              .record-card { box-shadow: none; }
+            }
           </style>
         </head>
         <body>
-          <header>
-            <div>
-              <div class="brand">TECNOPATCH</div>
-              <h1>Inventario y accesos del cliente</h1>
-              <div class="meta">${selectedInventoryClient.company || selectedInventoryClient.name}</div>
-            </div>
-            <div class="meta">Fecha: ${new Date().toLocaleString()}<br>Registros: ${filteredInventoryRecords.length}<br>Contraseñas: ${includeInventoryPasswords && canAccessInventorySecrets ? 'incluidas' : 'ocultas'}</div>
-          </header>
-          <table>
-            <thead>
-              <tr>
-                <th>Tipo</th><th>Dispositivo/servicio</th><th>Serie</th><th>IP</th><th>MAC</th><th>Puerto/URL</th><th>Usuario</th><th>Contraseña</th><th>Ubicacion</th><th>Responsable</th><th>Estado</th><th>Notas cliente</th>
-              </tr>
-            </thead>
-            <tbody>${rows || '<tr><td colspan="12">Sin registros.</td></tr>'}</tbody>
-          </table>
+          <main class="page">
+            <header class="hero">
+              <div>
+                <div class="brand">TecnoPatch</div>
+                <h1>Inventario y accesos del cliente</h1>
+                <div class="client-name">${escapeHtml(clientLabel)}</div>
+                <div class="client-meta">
+                  ${escapeHtml(selectedInventoryClient.name || '')}
+                  ${selectedInventoryClient.phone ? ` · Tel. ${escapeHtml(selectedInventoryClient.phone)}` : ''}
+                  ${selectedInventoryClient.email ? ` · ${escapeHtml(selectedInventoryClient.email)}` : ''}
+                </div>
+              </div>
+              <div class="report-meta">
+                <strong>Reporte técnico</strong><br>
+                Fecha: ${escapeHtml(new Date().toLocaleString())}<br>
+                Registros: ${filteredInventoryRecords.length}<br>
+                Contraseñas: ${includePasswords ? 'incluidas' : 'ocultas'}<br>
+                Generado por: ${escapeHtml(currentUserProfile?.name || 'TecnoPatch')}
+              </div>
+            </header>
+            <section class="summary">${summaryCards}</section>
+            <div class="section-title">Detalle de dispositivos, servicios y accesos</div>
+            ${recordCards || '<div class="empty">Sin registros para este cliente.</div>'}
+            <footer class="footer">
+              <span>TecnoPatch · Telecomunicaciones · Guadalajara, Jal.</span>
+              <span>Las notas internas no se incluyen en este reporte.</span>
+            </footer>
+          </main>
         </body>
       </html>
-    `);
-    reportWindow.document.close();
-    reportWindow.focus();
-    reportWindow.print();
+    `;
+
+    const printFrame = document.createElement('iframe');
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    printFrame.setAttribute('title', 'Reporte de inventario');
+    document.body.appendChild(printFrame);
+
+    const frameDocument = printFrame.contentWindow?.document;
+    if (!frameDocument || !printFrame.contentWindow) {
+      toast.error('No se pudo preparar el reporte PDF.');
+      printFrame.remove();
+      return;
+    }
+
+    frameDocument.open();
+    frameDocument.write(reportHtml);
+    frameDocument.close();
+
+    window.setTimeout(() => {
+      printFrame.contentWindow?.focus();
+      printFrame.contentWindow?.print();
+      window.setTimeout(() => printFrame.remove(), 1500);
+    }, 350);
+
     await logInventoryAction({
       id: 'reporte',
       clientId: selectedInventoryClient.id,
