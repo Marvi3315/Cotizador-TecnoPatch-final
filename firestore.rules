@@ -57,5 +57,16 @@ service cloud.firestore {
       allow read: if activeUser();
       allow write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
     }
+
+    match /clientInventory/{doc} {
+      allow read: if activeUser();
+      allow write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+
+    match /clientInventoryLogs/{doc} {
+      allow read: if activeUser();
+      allow create: if activeUser();
+      allow update, delete: if adminUser();
+    }
   }
 }

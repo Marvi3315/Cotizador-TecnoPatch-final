@@ -104,3 +104,59 @@ export interface UserProfile {
   createdBy?: string;
   lastLoginAt?: string;
 }
+
+export type ClientInventoryType =
+  | 'dispositivo'
+  | 'red'
+  | 'correo'
+  | 'hosting'
+  | 'dominio'
+  | 'camara'
+  | 'dvr-nvr'
+  | 'router'
+  | 'access-point'
+  | 'impresora'
+  | 'computadora'
+  | 'software'
+  | 'plataforma'
+  | 'otro';
+
+export type ClientInventoryStatus = 'activo' | 'reemplazado' | 'mantenimiento' | 'baja' | 'pendiente';
+
+export interface ClientInventoryRecord {
+  id: string;
+  clientId: string;
+  clientName: string;
+  type: ClientInventoryType;
+  name: string;
+  brand: string;
+  model: string;
+  serialNumber: string;
+  macAddress: string;
+  ipAddress: string;
+  accessUrl: string;
+  username: string;
+  password: string;
+  location: string;
+  responsible: string;
+  status: ClientInventoryStatus;
+  registeredAt: string;
+  updatedAt: string;
+  internalNotes: string;
+  clientNotes: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface ClientInventoryLog {
+  id: string;
+  clientId: string;
+  clientName: string;
+  recordId: string;
+  recordName: string;
+  action: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  createdAt: string;
+}

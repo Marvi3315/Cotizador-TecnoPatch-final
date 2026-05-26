@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
-import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil, Eye, Copy, Download, KeyRound, ShieldCheck } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,16 +16,21 @@ import { QuoteDocument } from './components/QuoteDocument';
 import { calculateMargin, calculateSubtotal as getQuoteSubtotal, calculateTotalCostDisplay as getTotalCostDisplay, formatSyscomPrice } from './pricing';
 import {
   deleteSharedClient,
+  deleteSharedInventoryRecord,
   deleteSharedMeeting,
   deleteSharedQuote,
   saveSharedClient,
+  saveSharedInventoryLog,
+  saveSharedInventoryRecord,
   saveSharedMeeting,
   saveSharedQuote,
   subscribeToClients,
+  subscribeToInventory,
+  subscribeToInventoryLogs,
   subscribeToMeetings,
   subscribeToQuotes
 } from './sharedStore';
-import type { Product, QuoteItem, QuoteHistoryItem, ClientRecord, MeetingRecord, UserProfile } from './types';
+import type { Product, QuoteItem, QuoteHistoryItem, ClientRecord, MeetingRecord, UserProfile, ClientInventoryRecord, ClientInventoryLog, ClientInventoryType, ClientInventoryStatus } from './types';
 
 const buildNextQuoteNumber = (history: QuoteHistoryItem[] = []) => {
   const year = new Date().getFullYear();
@@ -44,6 +49,50 @@ const cleanFileNamePart = (value: string) =>
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 70);
+
+const inventoryTypes: Array<{ value: ClientInventoryType; label: string }> = [
+  { value: 'dispositivo', label: 'Dispositivo' },
+  { value: 'red', label: 'Red' },
+  { value: 'correo', label: 'Correo' },
+  { value: 'hosting', label: 'Hosting' },
+  { value: 'dominio', label: 'Dominio' },
+  { value: 'camara', label: 'Camara' },
+  { value: 'dvr-nvr', label: 'DVR/NVR' },
+  { value: 'router', label: 'Router' },
+  { value: 'access-point', label: 'Access point' },
+  { value: 'impresora', label: 'Impresora' },
+  { value: 'computadora', label: 'Computadora' },
+  { value: 'software', label: 'Software' },
+  { value: 'plataforma', label: 'Plataforma' },
+  { value: 'otro', label: 'Otro' }
+];
+
+const inventoryStatuses: Array<{ value: ClientInventoryStatus; label: string }> = [
+  { value: 'activo', label: 'Activo' },
+  { value: 'reemplazado', label: 'Reemplazado' },
+  { value: 'mantenimiento', label: 'Mantenimiento' },
+  { value: 'baja', label: 'Baja' },
+  { value: 'pendiente', label: 'Pendiente' }
+];
+
+const emptyInventoryRecord = () => ({
+  type: 'dispositivo' as ClientInventoryType,
+  name: '',
+  brand: '',
+  model: '',
+  serialNumber: '',
+  macAddress: '',
+  ipAddress: '',
+  accessUrl: '',
+  username: '',
+  password: '',
+  location: '',
+  responsible: '',
+  status: 'activo' as ClientInventoryStatus,
+  registeredAt: new Date().toLocaleDateString('en-CA'),
+  internalNotes: '',
+  clientNotes: ''
+});
 
 export default function App() {
   const [searchTerm, setSearchTerm] = useState('tecnopatch');
@@ -88,9 +137,20 @@ export default function App() {
   const [manualUnit, setManualUnit] = useState('pz');
   const [manualQuantity, setManualQuantity] = useState(1);
   const [manualUnitPrice, setManualUnitPrice] = useState(0);
-  const [activeModule, setActiveModule] = useState<'inicio' | 'cotizador' | 'clientes' | 'citas' | 'seguimiento' | 'usuarios'>('inicio');
+  const [activeModule, setActiveModule] = useState<'inicio' | 'cotizador' | 'clientes' | 'citas' | 'seguimiento' | 'inventario' | 'usuarios'>('inicio');
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
+  const [inventoryRecords, setInventoryRecords] = useState<ClientInventoryRecord[]>([]);
+  const [inventoryLogs, setInventoryLogs] = useState<ClientInventoryLog[]>([]);
+  const [selectedInventoryClientId, setSelectedInventoryClientId] = useState('');
+  const [editingInventoryId, setEditingInventoryId] = useState('');
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryTypeFilter, setInventoryTypeFilter] = useState('Todos');
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState('Todos');
+  const [inventoryLocationFilter, setInventoryLocationFilter] = useState('Todas');
+  const [includeInventoryPasswords, setIncludeInventoryPasswords] = useState(false);
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+  const [newInventoryRecord, setNewInventoryRecord] = useState(emptyInventoryRecord());
   const [cloudStatus, setCloudStatus] = useState(firebaseReady ? 'Conectando Firebase...' : 'Firebase sin configurar');
   const [quoteStatus, setQuoteStatus] = useState<'Borrador' | 'Enviada' | 'Seguimiento' | 'Aceptada' | 'Rechazada'>('Borrador');
   const [selectedFollowQuoteId, setSelectedFollowQuoteId] = useState('');
@@ -148,6 +208,7 @@ export default function App() {
   const pipelineTotal = quoteHistory.reduce((acc, quote) => acc + (quote.total || 0), 0);
   const pendingMeetings = meetings.filter(meeting => meeting.status === 'Programada' || meeting.status === 'Reagendada');
   const activeClients = clients.filter(client => client.status !== 'Pausado');
+  const selectedInventoryClient = clients.find(client => client.id === selectedInventoryClientId);
   const todayIso = new Date().toLocaleDateString('en-CA');
   const todayMeetings = meetings.filter(meeting => meeting.date === todayIso);
   const quoteStages = ['Borrador', 'Enviada', 'Seguimiento', 'Aceptada', 'Rechazada'] as const;
@@ -193,6 +254,36 @@ export default function App() {
       ...quote.items.map(item => `${item.product.titulo} ${item.product.modelo} ${item.product.marca}`)
     )
   );
+  const selectedClientInventory = inventoryRecords.filter(record => record.clientId === selectedInventoryClientId);
+  const inventoryLocations = Array.from(new Set(selectedClientInventory.map(record => record.location).filter(Boolean))).sort();
+  const filteredInventoryRecords = selectedClientInventory.filter(record => {
+    const search = inventorySearch.trim().toLowerCase();
+    const matchesSearch = !search || [
+      record.name,
+      record.brand,
+      record.model,
+      record.serialNumber,
+      record.macAddress,
+      record.ipAddress,
+      record.accessUrl,
+      record.username,
+      record.location,
+      record.responsible,
+      record.internalNotes,
+      record.clientNotes
+    ].some(value => value?.toLowerCase().includes(search));
+
+    return matchesSearch &&
+      (inventoryTypeFilter === 'Todos' || record.type === inventoryTypeFilter) &&
+      (inventoryStatusFilter === 'Todos' || record.status === inventoryStatusFilter) &&
+      (inventoryLocationFilter === 'Todas' || record.location === inventoryLocationFilter);
+  });
+  const inventorySummary = {
+    total: selectedClientInventory.length,
+    active: selectedClientInventory.filter(record => record.status === 'activo').length,
+    maintenance: selectedClientInventory.filter(record => record.status === 'mantenimiento').length,
+    inactive: selectedClientInventory.filter(record => record.status === 'baja').length
+  };
   const syscomSearchBrands = ['Hikvision', 'HiLook', 'Ubiquiti', 'Grandstream', 'TP-Link', 'Dahua', 'DSC', 'Honeywell', 'ZKTeco', 'Ruijie', 'Mikrotik'];
   const normalizedSearchTerm = searchTerm.trim().replace(/\s+/g, ' ');
   const detectedSearchBrand = syscomSearchBrands.find(brand => normalizedSearchTerm.toLowerCase().includes(brand.toLowerCase()));
@@ -209,12 +300,15 @@ export default function App() {
   ].filter(Boolean)));
   const shouldShowSearchTip = activeModule === 'cotizador' && normalizedSearchTerm.length > 45;
   const isAdmin = currentUserProfile?.role === 'admin';
+  const canManageInventory = currentUserProfile?.role === 'admin' || currentUserProfile?.role === 'ventas';
+  const canAccessInventorySecrets = isAdmin;
   const moduleTabs = [
     { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'cotizador', label: 'Cotizador', icon: ShoppingCart },
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'citas', label: 'Citas', icon: CalendarDays },
     { id: 'seguimiento', label: 'Seguimiento', icon: ClipboardList },
+    { id: 'inventario', label: 'Inventario', icon: KeyRound },
     ...(isAdmin ? [{ id: 'usuarios' as const, label: 'Usuarios', icon: UserPlus }] : [])
   ] as const;
   const manualTemplates = [
@@ -313,6 +407,11 @@ export default function App() {
           window.clearTimeout(statusTimer);
           setMeetings(data);
           setCloudStatus('Firebase conectado');
+        }, handleCloudError),
+        subscribeToInventory(data => {
+          window.clearTimeout(statusTimer);
+          setInventoryRecords(data);
+          setCloudStatus('Firebase conectado');
         }, handleCloudError)
       );
     } else {
@@ -349,9 +448,31 @@ export default function App() {
   }, [currentUserProfile]);
 
   useEffect(() => {
+    if (!firebaseReady || !currentUserProfile || !selectedInventoryClientId) {
+      setInventoryLogs([]);
+      return;
+    }
+
+    return subscribeToInventoryLogs(
+      selectedInventoryClientId,
+      logs => setInventoryLogs(logs),
+      error => {
+        console.error('Inventory logs sync error:', error);
+        toast.error('No se pudo sincronizar la bitacora de inventario.');
+      }
+    );
+  }, [currentUserProfile, selectedInventoryClientId]);
+
+  useEffect(() => {
     if (!quoteNumberAuto.current || quoteItems.length > 0) return;
     setQuoteNumber(buildNextQuoteNumber(quoteHistory));
   }, [quoteHistory, quoteItems.length]);
+
+  useEffect(() => {
+    if (!selectedInventoryClientId && clients.length > 0) {
+      setSelectedInventoryClientId(clients[0].id);
+    }
+  }, [clients, selectedInventoryClientId]);
 
   // Update brands list when results change
   useEffect(() => {
@@ -975,6 +1096,246 @@ export default function App() {
       setCloudStatus('Firebase no guardo');
       toast.error(`No se pudo eliminar la cita: ${formatCloudError(error)}`);
     }
+  };
+
+  const logInventoryAction = async (record: Pick<ClientInventoryRecord, 'id' | 'clientId' | 'clientName' | 'name'>, action: string) => {
+    if (!currentUserProfile) return;
+
+    try {
+      await saveSharedInventoryLog({
+        id: `invlog-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        clientId: record.clientId,
+        clientName: record.clientName,
+        recordId: record.id,
+        recordName: record.name || 'Registro tecnico',
+        action,
+        userId: currentUserProfile.uid,
+        userName: currentUserProfile.name,
+        userEmail: currentUserProfile.email,
+        createdAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error saving inventory log:', error);
+    }
+  };
+
+  const resetInventoryForm = () => {
+    setEditingInventoryId('');
+    setNewInventoryRecord(emptyInventoryRecord());
+  };
+
+  const saveInventoryRecord = async () => {
+    if (!selectedInventoryClient) {
+      toast.error('Selecciona un cliente para guardar el registro.');
+      return;
+    }
+    if (!newInventoryRecord.name.trim()) {
+      toast.error('Agrega el nombre del dispositivo o servicio.');
+      return;
+    }
+    if (!canManageInventory) {
+      toast.error('Tu usuario no tiene permiso para modificar inventario.');
+      return;
+    }
+
+    const existingRecord = inventoryRecords.find(record => record.id === editingInventoryId);
+    const now = new Date().toISOString();
+    const record: ClientInventoryRecord = {
+      id: editingInventoryId || `inv-${Date.now()}`,
+      clientId: selectedInventoryClient.id,
+      clientName: selectedInventoryClient.company || selectedInventoryClient.name,
+      ...newInventoryRecord,
+      password: canAccessInventorySecrets ? newInventoryRecord.password : (existingRecord?.password || ''),
+      updatedAt: now,
+      createdBy: existingRecord?.createdBy || currentUserProfile?.name,
+      updatedBy: currentUserProfile?.name
+    };
+
+    try {
+      setCloudStatus('Guardando Firebase...');
+      await saveSharedInventoryRecord(record);
+      await logInventoryAction(record, editingInventoryId ? 'Registro editado' : 'Registro creado');
+      setCloudStatus('Firebase guardado');
+      toast.success(editingInventoryId ? 'Registro actualizado' : 'Registro agregado');
+      resetInventoryForm();
+    } catch (error) {
+      console.error('Error saving inventory record:', error);
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo guardar el registro: ${formatCloudError(error)}`);
+    }
+  };
+
+  const editInventoryRecord = (record: ClientInventoryRecord) => {
+    setEditingInventoryId(record.id);
+    setSelectedInventoryClientId(record.clientId);
+    setNewInventoryRecord({
+      type: record.type,
+      name: record.name || '',
+      brand: record.brand || '',
+      model: record.model || '',
+      serialNumber: record.serialNumber || '',
+      macAddress: record.macAddress || '',
+      ipAddress: record.ipAddress || '',
+      accessUrl: record.accessUrl || '',
+      username: record.username || '',
+      password: canAccessInventorySecrets ? (record.password || '') : '',
+      location: record.location || '',
+      responsible: record.responsible || '',
+      status: record.status || 'activo',
+      registeredAt: record.registeredAt || new Date().toLocaleDateString('en-CA'),
+      internalNotes: record.internalNotes || '',
+      clientNotes: record.clientNotes || ''
+    });
+  };
+
+  const deleteInventoryRecord = async (record: ClientInventoryRecord) => {
+    if (!canManageInventory) return;
+    if (!window.confirm(`Eliminar el registro "${record.name}"?`)) return;
+
+    try {
+      setCloudStatus('Guardando Firebase...');
+      await deleteSharedInventoryRecord(record.id);
+      await logInventoryAction(record, 'Registro eliminado');
+      setCloudStatus('Firebase guardado');
+      toast.success('Registro eliminado');
+    } catch (error) {
+      console.error('Error deleting inventory record:', error);
+      setCloudStatus('Firebase no guardo');
+      toast.error(`No se pudo eliminar el registro: ${formatCloudError(error)}`);
+    }
+  };
+
+  const revealInventoryPassword = async (record: ClientInventoryRecord) => {
+    if (!canAccessInventorySecrets) {
+      toast.error('Solo admin puede ver contrasenas.');
+      return;
+    }
+    setVisiblePasswords(current => ({ ...current, [record.id]: !current[record.id] }));
+    if (!visiblePasswords[record.id]) await logInventoryAction(record, 'Contraseña consultada');
+  };
+
+  const copyInventoryValue = async (record: ClientInventoryRecord, value: string, action: string, label: string) => {
+    if (!value) {
+      toast.error(`No hay ${label} para copiar.`);
+      return;
+    }
+    if (action.includes('Contraseña') && !canAccessInventorySecrets) {
+      toast.error('Solo admin puede copiar contrasenas.');
+      return;
+    }
+
+    await navigator.clipboard.writeText(value);
+    await logInventoryAction(record, action);
+    toast.success(`${label} copiado`);
+  };
+
+  const downloadInventoryCsv = async () => {
+    if (!selectedInventoryClient) return;
+
+    const rows = filteredInventoryRecords.map(record => ({
+      Cliente: selectedInventoryClient.company || selectedInventoryClient.name,
+      Tipo: inventoryTypes.find(type => type.value === record.type)?.label || record.type,
+      Nombre: record.name,
+      Marca: record.brand,
+      Modelo: record.model,
+      Serie: record.serialNumber,
+      IP: record.ipAddress,
+      MAC: record.macAddress,
+      Acceso: record.accessUrl,
+      Usuario: record.username,
+      Contrasena: includeInventoryPasswords && canAccessInventorySecrets ? record.password : '',
+      Ubicacion: record.location,
+      Responsable: record.responsible,
+      Estado: record.status,
+      NotasCliente: record.clientNotes
+    }));
+
+    const headers = Object.keys(rows[0] || { Cliente: '', Tipo: '', Nombre: '' });
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => headers.map(header => `"${String((row as any)[header] || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `inventario-${cleanFileNamePart(selectedInventoryClient.company || selectedInventoryClient.name)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    await logInventoryAction({
+      id: 'reporte',
+      clientId: selectedInventoryClient.id,
+      clientName: selectedInventoryClient.company || selectedInventoryClient.name,
+      name: 'Reporte CSV'
+    }, includeInventoryPasswords ? 'Reporte descargado con contraseñas' : 'Reporte descargado sin contraseñas');
+  };
+
+  const printInventoryReport = async () => {
+    if (!selectedInventoryClient) return;
+
+    const rows = filteredInventoryRecords.map(record => `
+      <tr>
+        <td>${record.type}</td>
+        <td><strong>${record.name}</strong><br>${record.brand} ${record.model}</td>
+        <td>${record.serialNumber || '-'}</td>
+        <td>${record.ipAddress || '-'}</td>
+        <td>${record.macAddress || '-'}</td>
+        <td>${record.accessUrl || '-'}</td>
+        <td>${record.username || '-'}</td>
+        <td>${includeInventoryPasswords && canAccessInventorySecrets ? (record.password || '-') : 'Oculta'}</td>
+        <td>${record.location || '-'}</td>
+        <td>${record.responsible || '-'}</td>
+        <td>${record.status}</td>
+        <td>${record.clientNotes || '-'}</td>
+      </tr>
+    `).join('');
+
+    const reportWindow = window.open('', '_blank');
+    if (!reportWindow) return;
+    reportWindow.document.write(`
+      <html>
+        <head>
+          <title>inventario-${cleanFileNamePart(selectedInventoryClient.company || selectedInventoryClient.name)}</title>
+          <style>
+            body{font-family:Arial,sans-serif;color:#0f172a;margin:32px}
+            header{display:flex;justify-content:space-between;border-bottom:4px solid #2563eb;padding-bottom:16px;margin-bottom:24px}
+            h1{margin:0;font-size:28px}
+            .brand{font-weight:900;color:#2563eb;letter-spacing:.18em;font-size:12px}
+            table{width:100%;border-collapse:collapse;font-size:11px}
+            th{background:#1d4ed8;color:white;text-align:left;padding:8px}
+            td{border-bottom:1px solid #e2e8f0;padding:8px;vertical-align:top}
+            .meta{color:#64748b;font-size:12px;line-height:1.5}
+          </style>
+        </head>
+        <body>
+          <header>
+            <div>
+              <div class="brand">TECNOPATCH</div>
+              <h1>Inventario y accesos del cliente</h1>
+              <div class="meta">${selectedInventoryClient.company || selectedInventoryClient.name}</div>
+            </div>
+            <div class="meta">Fecha: ${new Date().toLocaleString()}<br>Registros: ${filteredInventoryRecords.length}<br>Contraseñas: ${includeInventoryPasswords && canAccessInventorySecrets ? 'incluidas' : 'ocultas'}</div>
+          </header>
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th><th>Dispositivo/servicio</th><th>Serie</th><th>IP</th><th>MAC</th><th>Puerto/URL</th><th>Usuario</th><th>Contraseña</th><th>Ubicacion</th><th>Responsable</th><th>Estado</th><th>Notas cliente</th>
+              </tr>
+            </thead>
+            <tbody>${rows || '<tr><td colspan="12">Sin registros.</td></tr>'}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    reportWindow.document.close();
+    reportWindow.focus();
+    reportWindow.print();
+    await logInventoryAction({
+      id: 'reporte',
+      clientId: selectedInventoryClient.id,
+      clientName: selectedInventoryClient.company || selectedInventoryClient.name,
+      name: 'Reporte PDF'
+    }, includeInventoryPasswords ? 'Reporte descargado con contraseñas' : 'Reporte descargado sin contraseñas');
   };
 
   const restoreQuote = (hist: any) => {
@@ -2374,6 +2735,7 @@ export default function App() {
                           {activeModule === 'clientes' && 'Clientes'}
                           {activeModule === 'citas' && 'Agenda Comercial'}
                           {activeModule === 'seguimiento' && 'Seguimiento de Cotizaciones'}
+                          {activeModule === 'inventario' && 'Inventario y Accesos'}
                           {activeModule === 'usuarios' && 'Usuarios y Accesos'}
                         </h1>
                         <p className="text-xs text-slate-500">Busqueda y resumen rapido del flujo comercial.</p>
@@ -2988,6 +3350,297 @@ export default function App() {
                           </div>
                         </div>
                       ))}
+                    </section>
+                  </div>
+                )}
+
+                {activeModule === 'inventario' && (
+                  <div className="grid grid-cols-1 2xl:grid-cols-[420px_1fr] gap-5">
+                    <section className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-fit">
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                          <KeyRound size={20} className="text-blue-600" /> {editingInventoryId ? 'Editar Registro' : 'Agregar Registro'}
+                        </h2>
+                        {editingInventoryId && (
+                          <Button variant="ghost" size="sm" onClick={resetInventoryForm} className="text-xs font-black">
+                            Cancelar
+                          </Button>
+                        )}
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Cliente</label>
+                          <select
+                            className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm"
+                            value={selectedInventoryClientId}
+                            onChange={e => {
+                              setSelectedInventoryClientId(e.target.value);
+                              resetInventoryForm();
+                            }}
+                          >
+                            <option value="">Seleccionar cliente...</option>
+                            {clients.map(client => <option key={client.id} value={client.id}>{client.company || client.name}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Tipo</label>
+                            <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={newInventoryRecord.type} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, type: e.target.value as ClientInventoryType })}>
+                              {inventoryTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Estado</label>
+                            <select className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm" value={newInventoryRecord.status} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, status: e.target.value as ClientInventoryStatus })}>
+                              {inventoryStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Nombre del dispositivo o servicio</label>
+                          <Input placeholder="Ej. DVR principal, correo administracion, modem fibra..." value={newInventoryRecord.name} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, name: e.target.value })} />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Marca</label>
+                            <Input placeholder="Hikvision, Ubiquiti..." value={newInventoryRecord.brand} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, brand: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Modelo</label>
+                            <Input placeholder="Modelo / SKU" value={newInventoryRecord.model} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, model: e.target.value })} />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Serie</label>
+                            <Input placeholder="Numero de serie" value={newInventoryRecord.serialNumber} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, serialNumber: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">MAC</label>
+                            <Input placeholder="AA:BB:CC:DD:EE:FF" value={newInventoryRecord.macAddress} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, macAddress: e.target.value.toUpperCase() })} />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">IP</label>
+                            <Input placeholder="192.168.1.10" value={newInventoryRecord.ipAddress} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, ipAddress: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Puerto / URL</label>
+                            <Input placeholder=":8080, https://..." value={newInventoryRecord.accessUrl} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, accessUrl: e.target.value })} />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Usuario</label>
+                            <Input placeholder="admin, correo, usuario..." value={newInventoryRecord.username} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, username: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Contraseña</label>
+                            <Input
+                              type="password"
+                              placeholder={canAccessInventorySecrets ? 'Solo visible para admin' : 'Solo admin puede editar'}
+                              value={newInventoryRecord.password}
+                              disabled={!canAccessInventorySecrets}
+                              onChange={e => setNewInventoryRecord({ ...newInventoryRecord, password: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Ubicacion fisica</label>
+                            <Input placeholder="Recepcion, rack, caja..." value={newInventoryRecord.location} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, location: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Responsable</label>
+                            <Input placeholder="Persona que usa o cuida el equipo" value={newInventoryRecord.responsible} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, responsible: e.target.value })} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Fecha de instalacion / registro</label>
+                          <Input type="date" value={newInventoryRecord.registeredAt} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, registeredAt: e.target.value })} />
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Notas visibles para cliente</label>
+                          <textarea className="w-full min-h-[70px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Notas que si pueden salir en reporte para cliente..." value={newInventoryRecord.clientNotes} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, clientNotes: e.target.value })} />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-500">Notas internas</label>
+                          <textarea className="w-full min-h-[70px] rounded-lg border border-slate-200 p-3 text-sm outline-none focus:ring-1 focus:ring-blue-600" placeholder="Claves de contexto, pendientes internos, condiciones especiales..." value={newInventoryRecord.internalNotes} onChange={e => setNewInventoryRecord({ ...newInventoryRecord, internalNotes: e.target.value })} />
+                        </div>
+
+                        <Button onClick={saveInventoryRecord} disabled={!canManageInventory || !selectedInventoryClientId} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black">
+                          <Save size={16} className="mr-2" />
+                          {editingInventoryId ? 'Actualizar Registro' : 'Guardar Registro'}
+                        </Button>
+                        {!canAccessInventorySecrets && (
+                          <p className="text-[11px] text-slate-500">Tu rol puede crear/editar registros, pero las contraseñas solo las administra un usuario admin.</p>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="space-y-4 min-w-0">
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+                        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                          <div>
+                            <h2 className="text-lg font-black text-slate-900">Inventario y Accesos del Cliente</h2>
+                            <p className="text-sm text-slate-500">{selectedInventoryClient ? selectedInventoryClient.company || selectedInventoryClient.name : 'Selecciona un cliente para consultar sus registros tecnicos.'}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600">
+                              <input type="checkbox" checked={includeInventoryPasswords} disabled={!canAccessInventorySecrets} onChange={e => setIncludeInventoryPasswords(e.target.checked)} />
+                              Incluir contraseñas
+                            </label>
+                            <Button variant="outline" onClick={downloadInventoryCsv} disabled={!selectedInventoryClient || filteredInventoryRecords.length === 0}>
+                              <Download size={15} className="mr-2" /> Excel
+                            </Button>
+                            <Button onClick={printInventoryReport} disabled={!selectedInventoryClient} className="bg-slate-900 hover:bg-slate-800 text-white">
+                              <Printer size={15} className="mr-2" /> PDF
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Registros</p>
+                            <p className="text-2xl font-black text-slate-900">{inventorySummary.total}</p>
+                          </div>
+                          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Activos</p>
+                            <p className="text-2xl font-black text-emerald-700">{inventorySummary.active}</p>
+                          </div>
+                          <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Mantenimiento</p>
+                            <p className="text-2xl font-black text-amber-700">{inventorySummary.maintenance}</p>
+                          </div>
+                          <div className="rounded-xl bg-red-50 border border-red-100 p-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-red-700">Baja</p>
+                            <p className="text-2xl font-black text-red-700">{inventorySummary.inactive}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_160px_160px_160px] gap-2">
+                          <Input placeholder="Buscar por nombre, IP, MAC, usuario, marca..." value={inventorySearch} onChange={e => setInventorySearch(e.target.value)} />
+                          <select className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={inventoryTypeFilter} onChange={e => setInventoryTypeFilter(e.target.value)}>
+                            <option>Todos</option>
+                            {inventoryTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+                          </select>
+                          <select className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={inventoryStatusFilter} onChange={e => setInventoryStatusFilter(e.target.value)}>
+                            <option>Todos</option>
+                            {inventoryStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
+                          </select>
+                          <select className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={inventoryLocationFilter} onChange={e => setInventoryLocationFilter(e.target.value)}>
+                            <option>Todas</option>
+                            {inventoryLocations.map(location => <option key={location}>{location}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-900 text-white">
+                              <tr>
+                                <th className="px-3 py-3 text-left text-[10px] uppercase tracking-widest">Registro</th>
+                                <th className="px-3 py-3 text-left text-[10px] uppercase tracking-widest">Red / Acceso</th>
+                                <th className="px-3 py-3 text-left text-[10px] uppercase tracking-widest">Usuario</th>
+                                <th className="px-3 py-3 text-left text-[10px] uppercase tracking-widest">Contraseña</th>
+                                <th className="px-3 py-3 text-left text-[10px] uppercase tracking-widest">Ubicacion</th>
+                                <th className="px-3 py-3 text-right text-[10px] uppercase tracking-widest">Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {filteredInventoryRecords.length === 0 ? (
+                                <tr><td colSpan={6} className="p-8 text-center text-slate-400 font-bold">Sin registros para este cliente.</td></tr>
+                              ) : filteredInventoryRecords.map(record => (
+                                <tr key={record.id} className="hover:bg-slate-50">
+                                  <td className="px-3 py-3 align-top">
+                                    <div className="font-black text-slate-900">{record.name}</div>
+                                    <div className="text-xs text-slate-500">{inventoryTypes.find(type => type.value === record.type)?.label} · {record.brand || 'Sin marca'} {record.model}</div>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      <Badge variant="secondary" className="text-[10px]">{record.status}</Badge>
+                                      {record.serialNumber && <Badge variant="outline" className="text-[10px]">Serie: {record.serialNumber}</Badge>}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 align-top text-xs text-slate-600">
+                                    <div>IP: <span className="font-bold">{record.ipAddress || '-'}</span></div>
+                                    <div>MAC: <span className="font-bold">{record.macAddress || '-'}</span></div>
+                                    <div className="max-w-[220px] truncate">URL: {record.accessUrl || '-'}</div>
+                                  </td>
+                                  <td className="px-3 py-3 align-top">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-slate-700">{record.username || '-'}</span>
+                                      {record.username && (
+                                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Copiar usuario" onClick={() => copyInventoryValue(record, record.username, 'Usuario copiado', 'Usuario')}>
+                                          <Copy size={13} />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 align-top">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-slate-700">{visiblePasswords[record.id] && canAccessInventorySecrets ? record.password || '-' : '••••••••'}</span>
+                                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Ver contraseña" disabled={!canAccessInventorySecrets || !record.password} onClick={() => revealInventoryPassword(record)}>
+                                        <Eye size={13} />
+                                      </Button>
+                                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Copiar contraseña" disabled={!canAccessInventorySecrets || !record.password} onClick={() => copyInventoryValue(record, record.password, 'Contraseña copiada', 'Contraseña')}>
+                                        <Copy size={13} />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 align-top text-xs text-slate-600">
+                                    <div className="font-bold">{record.location || '-'}</div>
+                                    <div>{record.responsible || ''}</div>
+                                    {record.clientNotes && <div className="mt-1 max-w-[220px] text-slate-500 line-clamp-2">{record.clientNotes}</div>}
+                                  </td>
+                                  <td className="px-3 py-3 align-top">
+                                    <div className="flex justify-end gap-1">
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-blue-50 hover:text-blue-600" onClick={() => editInventoryRecord(record)}>
+                                        <Pencil size={14} />
+                                      </Button>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600" disabled={!canManageInventory} onClick={() => deleteInventoryRecord(record)}>
+                                        <Trash size={14} />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex items-center gap-2">
+                          <ShieldCheck size={18} className="text-blue-600" />
+                          <h3 className="font-black text-slate-900">Bitacora de Accesos</h3>
+                        </div>
+                        <div className="divide-y divide-slate-100 max-h-72 overflow-auto">
+                          {inventoryLogs.length === 0 ? (
+                            <div className="p-5 text-sm font-bold text-slate-400">Sin movimientos registrados para este cliente.</div>
+                          ) : inventoryLogs.map(log => (
+                            <div key={log.id} className="p-3 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-black text-slate-900">{log.action}</span>
+                                <span className="text-[11px] text-slate-400">{new Date(log.createdAt).toLocaleString()}</span>
+                              </div>
+                              <p className="text-xs text-slate-500">{log.recordName} · {log.userName || log.userEmail}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </section>
                   </div>
                 )}

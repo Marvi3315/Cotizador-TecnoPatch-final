@@ -8,12 +8,13 @@ import {
   orderBy,
   query,
   setDoc,
+  where,
   type DocumentReference,
   type Unsubscribe
 } from 'firebase/firestore';
 
 import { db } from './firebase';
-import type { ClientRecord, MeetingRecord, QuoteHistoryItem } from './types';
+import type { ClientInventoryLog, ClientInventoryRecord, ClientRecord, MeetingRecord, QuoteHistoryItem } from './types';
 
 const cleanForFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -102,4 +103,52 @@ export async function saveSharedMeeting(meeting: MeetingRecord) {
   const meetingRef = doc(database, 'meetings', meeting.id);
   await setDoc(meetingRef, cleanForFirestore(meeting));
   await confirmWrite(meetingRef, 'la cita');
+}
+
+export function subscribeToInventory(onData: (records: ClientInventoryRecord[]) => void, onError: (error: Error) => void): Unsubscribe {
+  const database = requireDb();
+  const inventoryQuery = query(collection(database, 'clientInventory'), orderBy('updatedAt', 'desc'), limit(300));
+
+  return onSnapshot(
+    inventoryQuery,
+    snapshot => onData(snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as ClientInventoryRecord)),
+    error => onError(error)
+  );
+}
+
+export function subscribeToInventoryLogs(clientId: string, onData: (logs: ClientInventoryLog[]) => void, onError: (error: Error) => void): Unsubscribe {
+  const database = requireDb();
+  const logsQuery = query(
+    collection(database, 'clientInventoryLogs'),
+    where('clientId', '==', clientId || '__none__'),
+    limit(80)
+  );
+
+  return onSnapshot(
+    logsQuery,
+    snapshot => onData(
+      snapshot.docs
+        .map(item => ({ id: item.id, ...item.data() }) as ClientInventoryLog)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    ),
+    error => onError(error)
+  );
+}
+
+export async function saveSharedInventoryRecord(record: ClientInventoryRecord) {
+  const database = requireDb();
+  const recordRef = doc(database, 'clientInventory', record.id);
+  await setDoc(recordRef, cleanForFirestore(record));
+  await confirmWrite(recordRef, 'el registro de inventario');
+}
+
+export async function deleteSharedInventoryRecord(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, 'clientInventory', id));
+}
+
+export async function saveSharedInventoryLog(log: ClientInventoryLog) {
+  const database = requireDb();
+  const logRef = doc(database, 'clientInventoryLogs', log.id);
+  await setDoc(logRef, cleanForFirestore(log));
 }
