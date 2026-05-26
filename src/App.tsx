@@ -1011,7 +1011,7 @@ export default function App() {
   const getPdfFileName = () => {
     const clientLabel = cleanFileNamePart(clientCompany || clientName || 'sin-cliente') || 'sin-cliente';
     const folioLabel = cleanFileNamePart(quoteNumber || buildNextQuoteNumber(quoteHistory));
-    return `cot-${folioLabel}-${clientLabel}`;
+    return `${folioLabel}-${clientLabel}`;
   };
 
   const printQuotePdf = (delay = 0) => {
