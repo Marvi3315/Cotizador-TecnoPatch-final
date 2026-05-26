@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
+import { jsPDF } from 'jspdf';
 import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil, Eye, Copy, Download, KeyRound, ShieldCheck } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
@@ -49,14 +50,6 @@ const cleanFileNamePart = (value: string) =>
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 70);
-
-const escapeHtml = (value: unknown) =>
-  String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 
 const inventoryTypes: Array<{ value: ClientInventoryType; label: string }> = [
   { value: 'dispositivo', label: 'Dispositivo' },
@@ -1402,324 +1395,227 @@ export default function App() {
     const includePasswords = includeInventoryPasswords && canAccessInventorySecrets;
     const statusLabel = (value: ClientInventoryStatus) => inventoryStatuses.find(status => status.value === value)?.label || value;
     const typeLabel = (value: ClientInventoryType) => inventoryTypes.find(type => type.value === value)?.label || value;
-    const summaryCards = [
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const contentWidth = pageWidth - margin * 2;
+    const bottomLimit = pageHeight - 18;
+    let y = margin;
+
+    const splitText = (value: unknown, width: number) => doc.splitTextToSize(String(value || '-'), width) as string[];
+
+    const drawSmallHeader = () => {
+      doc.setFillColor(15, 23, 42);
+      doc.roundedRect(margin, y, contentWidth, 14, 2.5, 2.5, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('TECNOPATCH', margin + 5, y + 5.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text('Inventario y accesos del cliente', margin + 5, y + 10);
+      doc.text(clientLabel, pageWidth - margin - 5, y + 8, { align: 'right' });
+      y += 20;
+    };
+
+    const ensurePage = (heightNeeded: number) => {
+      if (y + heightNeeded <= bottomLimit) return;
+      doc.addPage();
+      y = margin;
+      drawSmallHeader();
+    };
+
+    doc.setProperties({
+      title: `Inventario ${clientLabel}`,
+      subject: 'Inventario y accesos del cliente',
+      author: 'TecnoPatch',
+      creator: 'TecnoPatch'
+    });
+
+    doc.setFillColor(15, 23, 42);
+    doc.roundedRect(margin, y, contentWidth, 42, 3, 3, 'F');
+    doc.setFillColor(37, 99, 235);
+    doc.rect(margin, y + 39, contentWidth, 3, 'F');
+    doc.setTextColor(56, 189, 248);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('TECNOPATCH', margin + 7, y + 10);
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(21);
+    doc.text('Inventario y accesos del cliente', margin + 7, y + 21);
+    doc.setFontSize(12);
+    doc.text(clientLabel, margin + 7, y + 30);
+    doc.setTextColor(203, 213, 225);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const clientMeta = [
+      selectedInventoryClient.name,
+      selectedInventoryClient.phone ? `Tel. ${selectedInventoryClient.phone}` : '',
+      selectedInventoryClient.email
+    ].filter(Boolean).join(' · ');
+    doc.text(splitText(clientMeta || 'Cliente TecnoPatch', 108), margin + 7, y + 36);
+    doc.setTextColor(219, 234, 254);
+    doc.setFontSize(8.5);
+    doc.text([
+      'Reporte tecnico',
+      `Fecha: ${new Date().toLocaleString()}`,
+      `Registros: ${filteredInventoryRecords.length}`,
+      `Contrasenas: ${includePasswords ? 'incluidas' : 'ocultas'}`
+    ], pageWidth - margin - 7, y + 11, { align: 'right', lineHeightFactor: 1.45 });
+    y += 52;
+
+    const summary = [
       ['Registros', inventorySummary.total],
       ['Activos', inventorySummary.active],
       ['Mantenimiento', inventorySummary.maintenance],
       ['Baja', inventorySummary.inactive]
-    ].map(([label, value]) => `
-      <div class="summary-card">
-        <span>${escapeHtml(label)}</span>
-        <strong>${escapeHtml(value)}</strong>
-      </div>
-    `).join('');
+    ];
+    const summaryGap = 4;
+    const summaryWidth = (contentWidth - summaryGap * 3) / 4;
+    summary.forEach(([label, value], index) => {
+      const x = margin + index * (summaryWidth + summaryGap);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(219, 228, 240);
+      doc.roundedRect(x, y, summaryWidth, 20, 2.5, 2.5, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(String(label).toUpperCase(), x + 4, y + 7);
+      doc.setFontSize(15);
+      doc.setTextColor(15, 23, 42);
+      doc.text(String(value), x + 4, y + 15);
+    });
+    y += 30;
 
-    const recordCards = filteredInventoryRecords.map((record, index) => `
-      <article class="record-card">
-        <div class="record-head">
-          <div>
-            <span class="record-index">Registro ${index + 1}</span>
-            <h2>${escapeHtml(record.name || 'Registro tecnico')}</h2>
-            <p>${escapeHtml(typeLabel(record.type))}${record.brand || record.model ? ` · ${escapeHtml([record.brand, record.model].filter(Boolean).join(' '))}` : ''}</p>
-          </div>
-          <span class="status">${escapeHtml(statusLabel(record.status))}</span>
-        </div>
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(37, 99, 235);
+    doc.text('DETALLE DE DISPOSITIVOS, SERVICIOS Y ACCESOS', margin, y);
+    y += 6;
 
-        <div class="info-grid">
-          <div><span>Marca</span><strong>${escapeHtml(record.brand || '-')}</strong></div>
-          <div><span>Modelo</span><strong>${escapeHtml(record.model || '-')}</strong></div>
-          <div><span>Numero de serie</span><strong>${escapeHtml(record.serialNumber || '-')}</strong></div>
-          <div><span>Direccion MAC</span><strong>${escapeHtml(record.macAddress || '-')}</strong></div>
-          <div><span>Direccion IP</span><strong>${escapeHtml(record.ipAddress || '-')}</strong></div>
-          <div><span>Puerto o URL de acceso</span><strong>${escapeHtml(record.accessUrl || '-')}</strong></div>
-          <div><span>Usuario</span><strong>${escapeHtml(record.username || '-')}</strong></div>
-          <div><span>Contrasena</span><strong>${escapeHtml(includePasswords ? (record.password || '-') : 'Oculta por seguridad')}</strong></div>
-          <div><span>Ubicacion fisica</span><strong>${escapeHtml(record.location || '-')}</strong></div>
-          <div><span>Responsable</span><strong>${escapeHtml(record.responsible || '-')}</strong></div>
-          <div><span>Fecha de instalacion / registro</span><strong>${escapeHtml(record.registeredAt || '-')}</strong></div>
-          <div><span>Ultima actualizacion</span><strong>${escapeHtml(record.updatedAt ? new Date(record.updatedAt).toLocaleString() : '-')}</strong></div>
-        </div>
-
-        <div class="notes">
-          <span>Notas visibles para cliente</span>
-          <p>${escapeHtml(record.clientNotes || 'Sin notas visibles para cliente.')}</p>
-        </div>
-      </article>
-    `).join('');
-
-    const reportHtml = `
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>inventario-${escapeHtml(cleanFileNamePart(clientLabel))}</title>
-          <style>
-            @page { size: Letter portrait; margin: 14mm; }
-            * { box-sizing: border-box; }
-            body {
-              margin: 0;
-              background: #ffffff;
-              color: #0f172a;
-              font-family: Arial, Helvetica, sans-serif;
-              line-height: 1.38;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            .page { width: 100%; }
-            .hero {
-              background: #0f172a;
-              color: #ffffff;
-              border-radius: 16px;
-              padding: 24px;
-              display: grid;
-              grid-template-columns: 1fr auto;
-              gap: 24px;
-              align-items: start;
-              border-bottom: 6px solid #2563eb;
-            }
-            .brand {
-              color: #38bdf8;
-              font-size: 11px;
-              font-weight: 900;
-              letter-spacing: 0.22em;
-              text-transform: uppercase;
-              margin-bottom: 8px;
-            }
-            h1 {
-              margin: 0;
-              font-size: 30px;
-              letter-spacing: 0;
-            }
-            .client-name {
-              margin-top: 10px;
-              font-size: 18px;
-              font-weight: 800;
-            }
-            .client-meta {
-              margin-top: 6px;
-              color: #cbd5e1;
-              font-size: 12px;
-            }
-            .report-meta {
-              min-width: 210px;
-              color: #dbeafe;
-              font-size: 12px;
-              line-height: 1.7;
-              text-align: right;
-            }
-            .summary {
-              margin: 18px 0;
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
-              gap: 10px;
-            }
-            .summary-card {
-              border: 1px solid #dbe4f0;
-              border-radius: 12px;
-              padding: 12px;
-              background: #f8fafc;
-            }
-            .summary-card span {
-              display: block;
-              color: #64748b;
-              font-size: 10px;
-              font-weight: 900;
-              letter-spacing: 0.14em;
-              text-transform: uppercase;
-            }
-            .summary-card strong {
-              display: block;
-              margin-top: 5px;
-              font-size: 22px;
-              color: #0f172a;
-            }
-            .section-title {
-              margin: 22px 0 12px;
-              color: #2563eb;
-              font-size: 12px;
-              font-weight: 900;
-              letter-spacing: 0.18em;
-              text-transform: uppercase;
-            }
-            .record-card {
-              break-inside: avoid;
-              page-break-inside: avoid;
-              border: 1px solid #dbe4f0;
-              border-radius: 14px;
-              margin-bottom: 14px;
-              overflow: hidden;
-              background: #ffffff;
-            }
-            .record-head {
-              display: flex;
-              justify-content: space-between;
-              gap: 16px;
-              padding: 14px 16px;
-              background: #f8fafc;
-              border-bottom: 1px solid #e2e8f0;
-            }
-            .record-index {
-              display: inline-block;
-              color: #2563eb;
-              font-size: 10px;
-              font-weight: 900;
-              letter-spacing: 0.16em;
-              text-transform: uppercase;
-              margin-bottom: 4px;
-            }
-            h2 {
-              margin: 0;
-              font-size: 18px;
-              color: #0f172a;
-              overflow-wrap: anywhere;
-            }
-            .record-head p {
-              margin: 4px 0 0;
-              color: #64748b;
-              font-size: 12px;
-              overflow-wrap: anywhere;
-            }
-            .status {
-              align-self: start;
-              border-radius: 999px;
-              background: #dbeafe;
-              color: #1d4ed8;
-              padding: 6px 10px;
-              font-size: 10px;
-              font-weight: 900;
-              letter-spacing: 0.12em;
-              text-transform: uppercase;
-              white-space: nowrap;
-            }
-            .info-grid {
-              display: grid;
-              grid-template-columns: repeat(3, 1fr);
-              gap: 0;
-            }
-            .info-grid div {
-              min-height: 62px;
-              padding: 11px 14px;
-              border-right: 1px solid #e2e8f0;
-              border-bottom: 1px solid #e2e8f0;
-            }
-            .info-grid div:nth-child(3n) { border-right: 0; }
-            .info-grid span,
-            .notes span {
-              display: block;
-              color: #64748b;
-              font-size: 9px;
-              font-weight: 900;
-              letter-spacing: 0.12em;
-              text-transform: uppercase;
-              margin-bottom: 5px;
-            }
-            .info-grid strong {
-              display: block;
-              font-size: 12px;
-              color: #0f172a;
-              overflow-wrap: anywhere;
-              white-space: normal;
-            }
-            .notes {
-              padding: 14px 16px;
-            }
-            .notes p {
-              margin: 0;
-              color: #334155;
-              font-size: 12px;
-              text-align: justify;
-              overflow-wrap: anywhere;
-              white-space: pre-wrap;
-            }
-            .empty {
-              border: 1px dashed #cbd5e1;
-              border-radius: 14px;
-              padding: 28px;
-              color: #64748b;
-              font-weight: 700;
-              text-align: center;
-            }
-            .footer {
-              margin-top: 20px;
-              padding-top: 12px;
-              border-top: 1px solid #e2e8f0;
-              color: #64748b;
-              font-size: 10px;
-              display: flex;
-              justify-content: space-between;
-              gap: 16px;
-            }
-            @media print {
-              .record-card { box-shadow: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <main class="page">
-            <header class="hero">
-              <div>
-                <div class="brand">TecnoPatch</div>
-                <h1>Inventario y accesos del cliente</h1>
-                <div class="client-name">${escapeHtml(clientLabel)}</div>
-                <div class="client-meta">
-                  ${escapeHtml(selectedInventoryClient.name || '')}
-                  ${selectedInventoryClient.phone ? ` · Tel. ${escapeHtml(selectedInventoryClient.phone)}` : ''}
-                  ${selectedInventoryClient.email ? ` · ${escapeHtml(selectedInventoryClient.email)}` : ''}
-                </div>
-              </div>
-              <div class="report-meta">
-                <strong>Reporte técnico</strong><br>
-                Fecha: ${escapeHtml(new Date().toLocaleString())}<br>
-                Registros: ${filteredInventoryRecords.length}<br>
-                Contraseñas: ${includePasswords ? 'incluidas' : 'ocultas'}<br>
-                Generado por: ${escapeHtml(currentUserProfile?.name || 'TecnoPatch')}
-              </div>
-            </header>
-            <section class="summary">${summaryCards}</section>
-            <div class="section-title">Detalle de dispositivos, servicios y accesos</div>
-            ${recordCards || '<div class="empty">Sin registros para este cliente.</div>'}
-            <footer class="footer">
-              <span>TecnoPatch · Telecomunicaciones · Guadalajara, Jal.</span>
-              <span>Las notas internas no se incluyen en este reporte.</span>
-            </footer>
-          </main>
-        </body>
-      </html>
-    `;
-
-    const printFrame = document.createElement('iframe');
-    printFrame.style.position = 'fixed';
-    printFrame.style.right = '0';
-    printFrame.style.bottom = '0';
-    printFrame.style.width = '0';
-    printFrame.style.height = '0';
-    printFrame.style.border = '0';
-    printFrame.setAttribute('title', 'Reporte de inventario');
-    document.body.appendChild(printFrame);
-
-    const frameDocument = printFrame.contentWindow?.document;
-    if (!frameDocument || !printFrame.contentWindow) {
-      toast.error('No se pudo preparar el reporte PDF.');
-      printFrame.remove();
-      return;
+    if (filteredInventoryRecords.length === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(margin, y, contentWidth, 26, 3, 3, 'FD');
+      doc.setTextColor(100, 116, 139);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('Sin registros para este cliente.', pageWidth / 2, y + 15, { align: 'center' });
+      y += 32;
     }
 
-    frameDocument.open();
-    frameDocument.write(reportHtml);
-    frameDocument.close();
+    filteredInventoryRecords.forEach((record, index) => {
+      const detailRows = [
+        ['Tipo de registro', typeLabel(record.type)],
+        ['Estado', statusLabel(record.status)],
+        ['Marca', record.brand || '-'],
+        ['Modelo', record.model || '-'],
+        ['Numero de serie', record.serialNumber || '-'],
+        ['Direccion MAC', record.macAddress || '-'],
+        ['Direccion IP', record.ipAddress || '-'],
+        ['Puerto o URL de acceso', record.accessUrl || '-'],
+        ['Usuario', record.username || '-'],
+        ['Contrasena', includePasswords ? (record.password || '-') : 'Oculta por seguridad'],
+        ['Ubicacion fisica', record.location || '-'],
+        ['Responsable', record.responsible || '-'],
+        ['Fecha de instalacion / registro', record.registeredAt || '-'],
+        ['Ultima actualizacion', record.updatedAt ? new Date(record.updatedAt).toLocaleString() : '-']
+      ];
+      const colGap = 4;
+      const colWidth = (contentWidth - colGap) / 2;
+      const valueWidth = colWidth - 8;
+      const rowHeights = detailRows.map(([, value]) => Math.max(13, 8 + splitText(value, valueWidth).length * 4));
+      const notesLines = splitText(record.clientNotes || 'Sin notas visibles para cliente.', contentWidth - 12);
+      const headerHeight = 20;
+      const detailsHeight = rowHeights.reduce((acc, height, rowIndex) => rowIndex % 2 === 0 ? acc + Math.max(height, rowHeights[rowIndex + 1] || 0) : acc, 0);
+      const notesHeight = 16 + notesLines.length * 4;
+      const cardHeight = headerHeight + detailsHeight + notesHeight + 8;
 
-    window.setTimeout(() => {
-      printFrame.contentWindow?.focus();
-      printFrame.contentWindow?.print();
-      window.setTimeout(() => printFrame.remove(), 1500);
-    }, 350);
+      ensurePage(cardHeight + 5);
+      const cardTop = y;
+      doc.setDrawColor(219, 228, 240);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(margin, cardTop, contentWidth, cardHeight, 3, 3, 'FD');
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, cardTop, contentWidth, headerHeight, 3, 3, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, cardTop + headerHeight, pageWidth - margin, cardTop + headerHeight);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(37, 99, 235);
+      doc.text(`REGISTRO ${index + 1}`, margin + 5, cardTop + 6);
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(12);
+      doc.text(splitText(record.name || 'Registro tecnico', contentWidth - 48), margin + 5, cardTop + 13);
+      doc.setFillColor(219, 234, 254);
+      doc.roundedRect(pageWidth - margin - 34, cardTop + 5, 28, 7, 3, 3, 'F');
+      doc.setTextColor(29, 78, 216);
+      doc.setFontSize(6.5);
+      doc.text(statusLabel(record.status).toUpperCase(), pageWidth - margin - 20, cardTop + 9.5, { align: 'center' });
 
+      let rowY = cardTop + headerHeight;
+      for (let i = 0; i < detailRows.length; i += 2) {
+        const rowHeight = Math.max(rowHeights[i], rowHeights[i + 1] || 0);
+        [0, 1].forEach(offset => {
+          const detail = detailRows[i + offset];
+          if (!detail) return;
+          const x = margin + offset * (colWidth + colGap);
+          doc.setDrawColor(226, 232, 240);
+          doc.line(x, rowY + rowHeight, x + colWidth, rowY + rowHeight);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.4);
+          doc.setTextColor(100, 116, 139);
+          doc.text(detail[0].toUpperCase(), x + 4, rowY + 5);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8.3);
+          doc.setTextColor(15, 23, 42);
+          doc.text(splitText(detail[1], valueWidth), x + 4, rowY + 10, { lineHeightFactor: 1.25 });
+        });
+        rowY += rowHeight;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.6);
+      doc.setTextColor(100, 116, 139);
+      doc.text('NOTAS VISIBLES PARA CLIENTE', margin + 5, rowY + 7);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.2);
+      doc.setTextColor(51, 65, 85);
+      doc.text(notesLines, margin + 5, rowY + 12, { maxWidth: contentWidth - 10, lineHeightFactor: 1.35, align: 'justify' });
+      y = cardTop + cardHeight + 6;
+    });
+
+    ensurePage(18);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, y, pageWidth - margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Las notas internas no se incluyen en este reporte.', margin, y + 6);
+    doc.text('Documento generado para control tecnico y operativo del cliente.', margin, y + 11);
+
+    const pages = doc.getNumberOfPages();
+    for (let page = 1; page <= pages; page += 1) {
+      doc.setPage(page);
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text('TecnoPatch · Telecomunicaciones · Guadalajara, Jal.', margin, pageHeight - 7);
+      doc.text(`Pagina ${page} de ${pages}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
+    }
+
+    doc.save(`inventario-${cleanFileNamePart(clientLabel)}.pdf`);
     await logInventoryAction({
       id: 'reporte',
       clientId: selectedInventoryClient.id,
       clientName: selectedInventoryClient.company || selectedInventoryClient.name,
       name: 'Reporte PDF'
     }, includeInventoryPasswords ? 'Reporte descargado con contraseñas' : 'Reporte descargado sin contraseñas');
+    return;
   };
 
   const restoreQuote = (hist: any) => {
