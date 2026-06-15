@@ -50,6 +50,7 @@ export interface QuoteHistoryItem {
   clientContactRole?: string;
   projectType?: string;
   projectScope?: string;
+  quoteNotes?: string;
   marginPercent?: number;
   showModelsInPdf?: boolean;
   quoteStatus?: 'Borrador' | 'Enviada' | 'Seguimiento' | 'Aceptada' | 'Rechazada';

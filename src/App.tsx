@@ -151,6 +151,7 @@ export default function App() {
   const [clientContactRole, setClientContactRole] = useState('');
   const [projectType, setProjectType] = useState('Residencial');
   const [projectScope, setProjectScope] = useState('');
+  const [quoteNotes, setQuoteNotes] = useState('');
   const [manualTitle, setManualTitle] = useState('');
   const [manualCategory, setManualCategory] = useState('Material');
   const [manualUnit, setManualUnit] = useState('pz');
@@ -1010,8 +1011,9 @@ export default function App() {
 
   const getPdfFileName = () => {
     const clientLabel = cleanFileNamePart(clientCompany || clientName || 'sin-cliente') || 'sin-cliente';
-    const folioLabel = cleanFileNamePart(quoteNumber || buildNextQuoteNumber(quoteHistory));
-    return `${folioLabel}-${clientLabel}`;
+    const folioLabel = cleanFileNamePart(quoteNumber || buildNextQuoteNumber(quoteHistory)) || '2026-0001';
+    const consecutiveLabel = folioLabel.replace(/^COT-?/i, '') || folioLabel;
+    return `COT-${clientLabel}-${consecutiveLabel}`;
   };
 
   const printQuotePdf = (delay = 0) => {
@@ -1027,9 +1029,6 @@ export default function App() {
     window.addEventListener('afterprint', restoreTitle);
     window.setTimeout(() => {
       window.print();
-      window.setTimeout(() => {
-        restoreTitle();
-      }, 3000);
     }, delay);
   };
 
@@ -1054,6 +1053,7 @@ export default function App() {
       clientContactRole,
       projectType,
       projectScope,
+      quoteNotes,
       marginPercent,
       showModelsInPdf,
       quoteStatus,
@@ -1645,6 +1645,7 @@ export default function App() {
     setClientContactRole(hist.clientContactRole || '');
     setProjectType(hist.projectType || 'Residencial');
     setProjectScope(hist.projectScope || '');
+    setQuoteNotes(hist.quoteNotes || '');
     setMarginPercent(hist.marginPercent || 30);
     setShowModelsInPdf(false);
     setQuoteStatus(hist.quoteStatus || hist.status || 'Borrador');
@@ -2512,6 +2513,7 @@ export default function App() {
                             setQuoteItems([]);
                             quoteNumberAuto.current = true;
                             setQuoteNumber(buildNextQuoteNumber(quoteHistory));
+                            setQuoteNotes('');
                             setIsConfirmingEmpty(false);
                             toast.success('Cotizacion vaciada');
                           }}
@@ -2915,6 +2917,17 @@ export default function App() {
                             placeholder="Ej: Instalacion de 4 camaras fijas con tuberia conduit de 3/4, configuracion en app movil y respaldo de 15 dias..."
                             value={projectScope}
                             onChange={e => setProjectScope(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="pt-2">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Notas tecnicas / especificaciones para PDF</label>
+                          <textarea
+                            name="quote-notes"
+                            className="w-full text-xs p-3 border border-blue-100 rounded-lg min-h-[110px] focus:ring-1 focus:ring-blue-600 outline-none bg-blue-50/60"
+                            placeholder="Ej: Para este nobreak se recomienda validar carga total, voltaje de alimentacion, tipo de clavija electrica y calibre/material requerido antes de instalacion."
+                            value={quoteNotes}
+                            onChange={e => setQuoteNotes(e.target.value)}
                           />
                         </div>
                       </div>
@@ -4184,6 +4197,7 @@ export default function App() {
               includeIva={includeIva}
               exchangeRate={exchangeRate}
               projectScope={projectScope}
+              quoteNotes={quoteNotes}
               showModels={showModelsInPdf}
               currency={currency}
               quoteNumber={quoteNumber}
@@ -4213,6 +4227,7 @@ export default function App() {
                     includeIva={includeIva}
                     exchangeRate={exchangeRate}
                     projectScope={projectScope}
+                    quoteNotes={quoteNotes}
                     showModels={showModelsInPdf}
                     currency={currency}
                     quoteNumber={quoteNumber}

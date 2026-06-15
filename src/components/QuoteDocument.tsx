@@ -15,6 +15,7 @@ interface QuoteDocumentProps {
   includeIva: boolean;
   exchangeRate: number;
   projectScope: string;
+  quoteNotes?: string;
   showModels: boolean;
   currency: 'MXN' | 'USD';
   quoteNumber: string;
@@ -35,6 +36,7 @@ export function QuoteDocument({
   includeIva,
   exchangeRate,
   projectScope,
+  quoteNotes = '',
   showModels,
   currency,
   quoteNumber
@@ -108,6 +110,15 @@ export function QuoteDocument({
             <h4 className="text-blue-600 text-xs font-bold uppercase tracking-widest mb-3">Alcance y Memorandum del Proyecto</h4>
             <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap font-medium italic">
               "{projectScope}"
+            </div>
+          </div>
+        )}
+
+        {quoteNotes && quoteNotes.trim() !== '' && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-lg break-inside-avoid shadow-sm">
+            <h4 className="text-blue-700 text-xs font-bold uppercase tracking-widest mb-3">Notas tecnicas y especificaciones</h4>
+            <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap font-medium">
+              {quoteNotes}
             </div>
           </div>
         )}
