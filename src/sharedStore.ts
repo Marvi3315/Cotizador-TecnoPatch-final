@@ -18,6 +18,40 @@ import type { ClientInventoryLog, ClientInventoryRecord, ClientRecord, MeetingRe
 
 const cleanForFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
+const cleanQuoteForFirestore = (quote: QuoteHistoryItem): QuoteHistoryItem => cleanForFirestore({
+  ...quote,
+  items: quote.items.map(item => ({
+    quantity: Number(item.quantity) || 0,
+    unitPriceMxn: Number(item.unitPriceMxn) || 0,
+    product: {
+      producto_id: item.product.producto_id || '',
+      modelo: item.product.modelo || '',
+      total_existencia: Number(item.product.total_existencia) || 0,
+      titulo: item.product.titulo || '',
+      marca: item.product.marca || '',
+      img_portada: item.product.img_portada || '',
+      garantia: item.product.garantia || '',
+      sat_key: item.product.sat_key || '',
+      sat_description: item.product.sat_description || '',
+      pvol: item.product.pvol || '',
+      peso: item.product.peso || '',
+      alto: item.product.alto || '',
+      largo: item.product.largo || '',
+      ancho: item.product.ancho || '',
+      link: item.product.link || '',
+      precios: {
+        precio_1: item.product.precios?.precio_1 || '0',
+        precio_especial: item.product.precios?.precio_especial || '0',
+        precio_descuento: item.product.precios?.precio_descuento || '0',
+        precio_lista: item.product.precios?.precio_lista || '0'
+      },
+      isManual: Boolean(item.product.isManual),
+      manualCategory: item.product.manualCategory || '',
+      unit: item.product.unit || ''
+    }
+  }))
+});
+
 const requireDb = () => {
   if (!db) {
     throw new Error('Firebase no esta configurado. Agrega las variables VITE_FIREBASE_* en Vercel y en .env local.');
@@ -72,7 +106,7 @@ export function subscribeToMeetings(onData: (meetings: MeetingRecord[]) => void,
 export async function saveSharedQuote(quote: QuoteHistoryItem) {
   const database = requireDb();
   const quoteRef = doc(database, 'quoteHistory', quote.id);
-  await setDoc(quoteRef, cleanForFirestore({ ...quote, savedAt: Date.now() }));
+  await setDoc(quoteRef, cleanQuoteForFirestore({ ...quote, savedAt: Date.now() }));
   await confirmWrite(quoteRef, 'la cotizacion');
 }
 
