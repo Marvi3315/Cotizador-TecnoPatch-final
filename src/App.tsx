@@ -816,7 +816,15 @@ export default function App() {
     setClientEmail(client.email);
     setClientRfc(client.rfc || '');
     setClientContactRole(client.contactRole || '');
-    setProjectScope(current => current || (client.address ? `Direccion del proyecto: ${client.address}` : ''));
+    setProjectScope(current => {
+      const addressLine = client.address ? `Direccion del proyecto: ${client.address}` : '';
+      const addressLineRegex = /^Direccion del proyecto:.*$/m;
+      if (!current) return addressLine;
+      if (addressLineRegex.test(current)) {
+        return addressLine ? current.replace(addressLineRegex, addressLine) : current.replace(addressLineRegex, '').trim();
+      }
+      return addressLine ? `${addressLine}\n${current}` : current;
+    });
     setActiveModule('cotizador');
     toast.success('Cliente cargado en cotizacion');
   };
