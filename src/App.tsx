@@ -4537,8 +4537,9 @@ export default function App() {
             </DialogContent>
           </Dialog>
 
-          {/* Floating AI Chat Widget */}
-          <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+          {/* Floating AI Chat Widget - oculto en vista previa e impresion */}
+          {!showPreview && (
+            <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3 print:hidden">
             {chatOpen && (
               <div className="w-[320px] sm:w-[360px] h-[440px] bg-white rounded-2xl shadow-2xl border border-indigo-100 flex flex-col overflow-hidden">
                 <div className="px-3 py-2.5 bg-indigo-600 text-white flex items-center justify-between shrink-0">
@@ -4598,7 +4599,8 @@ export default function App() {
             >
               {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
             </button>
-          </div>
+            </div>
+          )}
         </div>
       )}
     </>
