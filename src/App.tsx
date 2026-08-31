@@ -987,6 +987,7 @@ export default function App() {
         toast.info(`"${data.clientNameGuess}" no esta en tu CRM. Completa sus datos y guarda para continuar la cotizacion.`);
       } else if (items.length > 0) {
         addManualItemsFromAi(items);
+        setActiveModule('cotizador');
       } else {
         toast.error('No entendi la instruccion, intenta ser mas especifico');
       }
@@ -3339,6 +3340,30 @@ export default function App() {
                           </div>
                         </div>
                         <div className="absolute -right-14 -bottom-20 h-52 w-52 rounded-full bg-blue-500/20"></div>
+                      </div>
+
+                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 shadow-sm">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-indigo-700 mb-1.5 flex items-center gap-1.5">
+                          ✨ Decirle a la IA que agregue algo
+                        </label>
+                        <div className="flex gap-2">
+                          <Input
+                            name="ai-command-inicio"
+                            className="h-9 text-xs bg-white"
+                            placeholder='Ej: "Agrega 3 camaras hikvision a $1200 c/u para Juan Perez"'
+                            value={commandText}
+                            onChange={e => setCommandText(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !commandLoading) runAiCommand(); }}
+                          />
+                          <Button
+                            type="button"
+                            onClick={runAiCommand}
+                            disabled={commandLoading || !commandText.trim()}
+                            className="h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase whitespace-nowrap"
+                          >
+                            {commandLoading ? 'Procesando...' : 'Ejecutar'}
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
