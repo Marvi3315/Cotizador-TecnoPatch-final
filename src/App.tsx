@@ -156,6 +156,9 @@ export default function App() {
   const [aiEquipLoading, setAiEquipLoading] = useState(false);
   const [aiEquipSuggestions, setAiEquipSuggestions] = useState<Array<{ nombre: string; motivo: string }>>([]);
   const [aiEquipChecked, setAiEquipChecked] = useState(false);
+  const [commandText, setCommandText] = useState('');
+  const [commandLoading, setCommandLoading] = useState(false);
+  const [pendingAiItems, setPendingAiItems] = useState<Array<{ nombre: string; cantidad: number; precioUnitario: number }>>([]);
   const [manualTitle, setManualTitle] = useState('');
   const [manualCategory, setManualCategory] = useState('Material');
   const [manualUnit, setManualUnit] = useState('pz');
@@ -806,6 +809,11 @@ export default function App() {
       setClientContactRole(client.contactRole || '');
       resetClientForm();
       toast.success(editingClientId ? 'Cliente actualizado' : 'Cliente agregado al CRM compartido');
+      if (!editingClientId && pendingAiItems.length > 0) {
+        addManualItemsFromAi(pendingAiItems);
+        setPendingAiItems([]);
+        setActiveModule('cotizador');
+      }
     } catch (error) {
       console.error('Error saving client:', error);
       setCloudStatus('Firebase no guardo');
@@ -907,6 +915,89 @@ export default function App() {
   const searchSuggestion = (nombre: string) => {
     setSearchTerm(nombre);
     fetchProducts(nombre);
+  };
+
+  const addManualItemsFromAi = (items: Array<{ nombre: string; cantidad: number; precioUnitario: number }>) => {
+    if (!items || items.length === 0) return;
+    const newItems = items.map(it => {
+      const precio = Number(it.precioUnitario) || 0;
+      const unitPriceMxn = currency === 'USD' ? precio * exchangeRate : precio;
+      const id = `manual-ai-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const product: Product = {
+        producto_id: id,
+        modelo: 'IA',
+        total_existencia: 0,
+        titulo: it.nombre || 'Producto sin nombre',
+        marca: 'Partida manual (IA)',
+        img_portada: '',
+        garantia: '',
+        sat_key: '',
+        sat_description: '',
+        pvol: '',
+        peso: '',
+        alto: '',
+        largo: '',
+        ancho: '',
+        link: '',
+        precios: { precio_1: '0', precio_especial: '0', precio_descuento: '0', precio_lista: '0' },
+        isManual: true,
+        manualCategory: 'Manual',
+        unit: 'pz'
+      };
+      return { product, quantity: Number(it.cantidad) > 0 ? Number(it.cantidad) : 1, unitPriceMxn };
+    });
+    setQuoteItems(current => [...current, ...newItems]);
+    toast.success(`${newItems.length} producto(s) agregado(s) por IA a la cotizacion`);
+  };
+
+  const runAiCommand = async () => {
+    const message = commandText.trim();
+    if (!message) return;
+
+    setCommandLoading(true);
+    try {
+      const response = await fetch('/api/ai-command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          clients: clients.map(c => ({ id: c.id, name: c.name, company: c.company }))
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'No se pudo interpretar la instruccion');
+      }
+
+      const items = Array.isArray(data.items) ? data.items : [];
+
+      if (data.clientId) {
+        const matchedClient = clients.find(c => c.id === data.clientId);
+        if (matchedClient) {
+          useClientInQuote(matchedClient);
+          addManualItemsFromAi(items);
+        } else if (items.length > 0) {
+          addManualItemsFromAi(items);
+        }
+      } else if (data.clientNameGuess) {
+        setEditingClientId('');
+        setNewClient(current => ({ ...current, name: data.clientNameGuess }));
+        setPendingAiItems(items);
+        setActiveModule('clientes');
+        toast.info(`"${data.clientNameGuess}" no esta en tu CRM. Completa sus datos y guarda para continuar la cotizacion.`);
+      } else if (items.length > 0) {
+        addManualItemsFromAi(items);
+      } else {
+        toast.error('No entendi la instruccion, intenta ser mas especifico');
+      }
+
+      setCommandText('');
+    } catch (error: any) {
+      console.error('runAiCommand error:', error);
+      toast.error(error.message || 'Error al consultar la IA');
+    } finally {
+      setCommandLoading(false);
+    }
   };
 
   const editClient = (client: ClientRecord) => {
@@ -2202,6 +2293,29 @@ export default function App() {
                     style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
                   </div>
                 )}
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 shadow-sm mb-1">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-indigo-700 mb-1.5 flex items-center gap-1.5">
+                    ✨ Decirle a la IA que agregue algo
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      name="ai-command"
+                      className="h-9 text-xs bg-white"
+                      placeholder='Ej: "Agrega 3 camaras hikvision a $1200 c/u para Juan Perez"'
+                      value={commandText}
+                      onChange={e => setCommandText(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !commandLoading) runAiCommand(); }}
+                    />
+                    <Button
+                      type="button"
+                      onClick={runAiCommand}
+                      disabled={commandLoading || !commandText.trim()}
+                      className="h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase whitespace-nowrap"
+                    >
+                      {commandLoading ? 'Procesando...' : 'Ejecutar'}
+                    </Button>
+                  </div>
+                </div>
                 <div className="sticky top-[-20px] -mx-4 px-4 pt-5 z-30 bg-slate-50 border-b border-slate-200/50 pb-4 shadow-sm">
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
