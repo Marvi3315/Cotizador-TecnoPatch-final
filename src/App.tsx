@@ -152,6 +152,7 @@ export default function App() {
   const [projectType, setProjectType] = useState('Residencial');
   const [projectScope, setProjectScope] = useState('');
   const [quoteNotes, setQuoteNotes] = useState('');
+  const [aiNotesLoading, setAiNotesLoading] = useState(false);
   const [manualTitle, setManualTitle] = useState('');
   const [manualCategory, setManualCategory] = useState('Material');
   const [manualUnit, setManualUnit] = useState('pz');
@@ -827,6 +828,39 @@ export default function App() {
     });
     setActiveModule('cotizador');
     toast.success('Cliente cargado en cotizacion');
+  };
+
+  const suggestTechnicalNotes = async () => {
+    if (quoteItems.length === 0) {
+      toast.error('Agrega al menos un producto a la cotizacion primero');
+      return;
+    }
+    setAiNotesLoading(true);
+    try {
+      const response = await fetch('/api/ai-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: quoteItems.map(item => ({
+            nombre: item.product.titulo,
+            marca: item.product.marca,
+            cantidad: item.quantity
+          })),
+          clientNotes: quoteNotes
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'No se pudo generar la sugerencia');
+      }
+      setQuoteNotes(current => current ? `${current}\n${data.suggestion}` : data.suggestion);
+      toast.success('Notas tecnicas sugeridas con IA');
+    } catch (error: any) {
+      console.error('suggestTechnicalNotes error:', error);
+      toast.error(error.message || 'Error al consultar la IA');
+    } finally {
+      setAiNotesLoading(false);
+    }
   };
 
   const editClient = (client: ClientRecord) => {
@@ -2929,7 +2963,17 @@ export default function App() {
                         </div>
 
                         <div className="pt-2">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Notas tecnicas / especificaciones para PDF</label>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Notas tecnicas / especificaciones para PDF</label>
+                            <button
+                              type="button"
+                              onClick={suggestTechnicalNotes}
+                              disabled={aiNotesLoading}
+                              className="text-[10px] font-bold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                            >
+                              {aiNotesLoading ? 'Generando...' : '✨ Sugerir con IA'}
+                            </button>
+                          </div>
                           <textarea
                             name="quote-notes"
                             className="w-full text-xs p-3 border border-blue-100 rounded-lg min-h-[110px] focus:ring-1 focus:ring-blue-600 outline-none bg-blue-50/60"
