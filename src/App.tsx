@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { jsPDF } from 'jspdf';
-import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil, Eye, Copy, Download, KeyRound, ShieldCheck } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil, Eye, Copy, Download, KeyRound, ShieldCheck, MessageCircle, Sparkles } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -156,9 +156,11 @@ export default function App() {
   const [aiEquipLoading, setAiEquipLoading] = useState(false);
   const [aiEquipSuggestions, setAiEquipSuggestions] = useState<Array<{ nombre: string; motivo: string }>>([]);
   const [aiEquipChecked, setAiEquipChecked] = useState(false);
-  const [commandText, setCommandText] = useState('');
-  const [commandLoading, setCommandLoading] = useState(false);
   const [pendingAiItems, setPendingAiItems] = useState<Array<{ nombre: string; cantidad: number; precioUnitario: number }>>([]);
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [manualTitle, setManualTitle] = useState('');
   const [manualCategory, setManualCategory] = useState('Material');
   const [manualUnit, setManualUnit] = useState('pz');
@@ -349,6 +351,25 @@ export default function App() {
     { label: 'Obra civil', title: 'Obra civil / canalizacion', category: 'Obra civil', unit: 'servicio', quantity: 1 },
     { label: 'Viaticos', title: 'Viaticos y traslado', category: 'Servicio', unit: 'servicio', quantity: 1 }
   ];
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('nova-chat-history');
+      if (saved) setChatMessages(JSON.parse(saved));
+    } catch (e) {
+      console.warn('No se pudo cargar el historial del chat', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (chatMessages.length > 0) {
+        localStorage.setItem('nova-chat-history', JSON.stringify(chatMessages.slice(-60)));
+      }
+    } catch (e) {
+      console.warn('No se pudo guardar el historial del chat', e);
+    }
+  }, [chatMessages]);
 
   useEffect(() => {
     if (!authReady || !auth) {
@@ -950,27 +971,33 @@ export default function App() {
     toast.success(`${newItems.length} producto(s) agregado(s) por IA a la cotizacion`);
   };
 
-  const runAiCommand = async () => {
-    const message = commandText.trim();
+  const sendChatMessage = async () => {
+    const message = chatInput.trim();
     if (!message) return;
 
-    setCommandLoading(true);
+    const priorHistory = chatMessages;
+    setChatMessages(current => [...current, { role: 'user', content: message }]);
+    setChatInput('');
+    setChatLoading(true);
+
     try {
-      const response = await fetch('/api/ai-command', {
+      const response = await fetch('/api/ai-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
+          history: priorHistory,
           clients: clients.map(c => ({ id: c.id, name: c.name, company: c.company }))
         })
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'No se pudo interpretar la instruccion');
+        throw new Error(data.error || 'No se pudo obtener respuesta');
       }
 
-      const items = Array.isArray(data.items) ? data.items : [];
+      setChatMessages(current => [...current, { role: 'assistant', content: data.reply || 'Listo.' }]);
 
+      const items = Array.isArray(data.items) ? data.items : [];
       if (data.clientId) {
         const matchedClient = clients.find(c => c.id === data.clientId);
         if (matchedClient) {
@@ -984,20 +1011,16 @@ export default function App() {
         setNewClient(current => ({ ...current, name: data.clientNameGuess }));
         setPendingAiItems(items);
         setActiveModule('clientes');
-        toast.info(`"${data.clientNameGuess}" no esta en tu CRM. Completa sus datos y guarda para continuar la cotizacion.`);
       } else if (items.length > 0) {
         addManualItemsFromAi(items);
         setActiveModule('cotizador');
-      } else {
-        toast.error('No entendi la instruccion, intenta ser mas especifico');
       }
-
-      setCommandText('');
     } catch (error: any) {
-      console.error('runAiCommand error:', error);
+      console.error('sendChatMessage error:', error);
+      setChatMessages(current => [...current, { role: 'assistant', content: 'Tuve un problema para responder, intenta de nuevo por favor.' }]);
       toast.error(error.message || 'Error al consultar la IA');
     } finally {
-      setCommandLoading(false);
+      setChatLoading(false);
     }
   };
 
@@ -2294,29 +2317,6 @@ export default function App() {
                     style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
                   </div>
                 )}
-                <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 shadow-sm mb-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-indigo-700 mb-1.5 flex items-center gap-1.5">
-                    ✨ Decirle a la IA que agregue algo
-                  </label>
-                  <div className="flex gap-2">
-                    <Input
-                      name="ai-command"
-                      className="h-9 text-xs bg-white"
-                      placeholder='Ej: "Agrega 3 camaras hikvision a $1200 c/u para Juan Perez"'
-                      value={commandText}
-                      onChange={e => setCommandText(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && !commandLoading) runAiCommand(); }}
-                    />
-                    <Button
-                      type="button"
-                      onClick={runAiCommand}
-                      disabled={commandLoading || !commandText.trim()}
-                      className="h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase whitespace-nowrap"
-                    >
-                      {commandLoading ? 'Procesando...' : 'Ejecutar'}
-                    </Button>
-                  </div>
-                </div>
                 <div className="sticky top-[-20px] -mx-4 px-4 pt-5 z-30 bg-slate-50 border-b border-slate-200/50 pb-4 shadow-sm">
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
@@ -3342,26 +3342,50 @@ export default function App() {
                         <div className="absolute -right-14 -bottom-20 h-52 w-52 rounded-full bg-blue-500/20"></div>
                       </div>
 
-                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 shadow-sm">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-indigo-700 mb-1.5 flex items-center gap-1.5">
-                          ✨ Decirle a la IA que agregue algo
-                        </label>
-                        <div className="flex gap-2">
+                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 shadow-sm overflow-hidden flex flex-col" style={{ height: '420px' }}>
+                        <div className="px-3 pt-3 pb-2 border-b border-indigo-100 flex items-center gap-1.5 shrink-0">
+                          <Sparkles size={14} className="text-indigo-600" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700">Nova · Asistente TecnoPatch</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 custom-scrollbar">
+                          {chatMessages.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-center text-indigo-400 px-4">
+                              <MessageCircle size={28} className="mb-2 opacity-50" />
+                              <p className="text-xs font-medium">Platicame lo que sea, o dime que agregue algo a una cotizacion.</p>
+                            </div>
+                          ) : (
+                            chatMessages.map((msg, idx) => (
+                              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs leading-snug whitespace-pre-wrap ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-indigo-100'}`}>
+                                  {msg.content}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                          {chatLoading && (
+                            <div className="flex justify-start">
+                              <div className="max-w-[85%] rounded-lg px-3 py-2 text-xs bg-white text-slate-400 border border-indigo-100">
+                                Escribiendo...
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-2 border-t border-indigo-100 flex gap-2 shrink-0 bg-white/60">
                           <Input
-                            name="ai-command-inicio"
+                            name="ai-chat-inicio"
                             className="h-9 text-xs bg-white"
-                            placeholder='Ej: "Agrega 3 camaras hikvision a $1200 c/u para Juan Perez"'
-                            value={commandText}
-                            onChange={e => setCommandText(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter' && !commandLoading) runAiCommand(); }}
+                            placeholder="Escribe aqui..."
+                            value={chatInput}
+                            onChange={e => setChatInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !chatLoading) sendChatMessage(); }}
                           />
                           <Button
                             type="button"
-                            onClick={runAiCommand}
-                            disabled={commandLoading || !commandText.trim()}
-                            className="h-9 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase whitespace-nowrap"
+                            onClick={sendChatMessage}
+                            disabled={chatLoading || !chatInput.trim()}
+                            className="h-9 px-3 bg-indigo-600 hover:bg-indigo-700 text-white"
                           >
-                            {commandLoading ? 'Procesando...' : 'Ejecutar'}
+                            <ArrowUp size={16} />
                           </Button>
                         </div>
                       </div>
@@ -4512,6 +4536,69 @@ export default function App() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Floating AI Chat Widget */}
+          <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+            {chatOpen && (
+              <div className="w-[320px] sm:w-[360px] h-[440px] bg-white rounded-2xl shadow-2xl border border-indigo-100 flex flex-col overflow-hidden">
+                <div className="px-3 py-2.5 bg-indigo-600 text-white flex items-center justify-between shrink-0">
+                  <span className="text-xs font-black uppercase tracking-widest flex items-center gap-1.5">
+                    <Sparkles size={14} /> Nova
+                  </span>
+                  <button onClick={() => setChatOpen(false)} className="text-white/80 hover:text-white">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 custom-scrollbar bg-indigo-50/40">
+                  {chatMessages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-indigo-400 px-4">
+                      <MessageCircle size={28} className="mb-2 opacity-50" />
+                      <p className="text-xs font-medium">Platicame lo que sea, o dime que agregue algo a una cotizacion.</p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, idx) => (
+                      <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs leading-snug whitespace-pre-wrap ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-700 border border-indigo-100'}`}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {chatLoading && (
+                    <div className="flex justify-start">
+                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-xs bg-white text-slate-400 border border-indigo-100">
+                        Escribiendo...
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="p-2 border-t border-indigo-100 flex gap-2 shrink-0 bg-white">
+                  <Input
+                    name="ai-chat-floating"
+                    className="h-9 text-xs"
+                    placeholder="Escribe aqui..."
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !chatLoading) sendChatMessage(); }}
+                  />
+                  <Button
+                    type="button"
+                    onClick={sendChatMessage}
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="h-9 px-3 bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    <ArrowUp size={16} />
+                  </Button>
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => setChatOpen(current => !current)}
+              className="w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xl flex items-center justify-center transition-transform hover:scale-105"
+            >
+              {chatOpen ? <X size={22} /> : <MessageCircle size={22} />}
+            </button>
+          </div>
         </div>
       )}
     </>
