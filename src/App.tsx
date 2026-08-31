@@ -153,6 +153,9 @@ export default function App() {
   const [projectScope, setProjectScope] = useState('');
   const [quoteNotes, setQuoteNotes] = useState('');
   const [aiNotesLoading, setAiNotesLoading] = useState(false);
+  const [aiEquipLoading, setAiEquipLoading] = useState(false);
+  const [aiEquipSuggestions, setAiEquipSuggestions] = useState<Array<{ nombre: string; motivo: string }>>([]);
+  const [aiEquipChecked, setAiEquipChecked] = useState(false);
   const [manualTitle, setManualTitle] = useState('');
   const [manualCategory, setManualCategory] = useState('Material');
   const [manualUnit, setManualUnit] = useState('pz');
@@ -841,6 +844,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          mode: 'technical-notes',
           items: quoteItems.map(item => ({
             nombre: item.product.titulo,
             marca: item.product.marca,
@@ -861,6 +865,48 @@ export default function App() {
     } finally {
       setAiNotesLoading(false);
     }
+  };
+
+  const suggestComplementaryEquipment = async () => {
+    if (quoteItems.length === 0) {
+      toast.error('Agrega al menos un producto a la cotizacion primero');
+      return;
+    }
+    setAiEquipLoading(true);
+    setAiEquipChecked(false);
+    try {
+      const response = await fetch('/api/ai-suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'complementary-equipment',
+          items: quoteItems.map(item => ({
+            nombre: item.product.titulo,
+            marca: item.product.marca,
+            cantidad: item.quantity
+          }))
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'No se pudo generar la sugerencia');
+      }
+      setAiEquipSuggestions(data.suggestions || []);
+      setAiEquipChecked(true);
+      if (!data.suggestions || data.suggestions.length === 0) {
+        toast.success('La IA no encontro equipo adicional que sugerir, parece que ya esta completo');
+      }
+    } catch (error: any) {
+      console.error('suggestComplementaryEquipment error:', error);
+      toast.error(error.message || 'Error al consultar la IA');
+    } finally {
+      setAiEquipLoading(false);
+    }
+  };
+
+  const searchSuggestion = (nombre: string) => {
+    setSearchTerm(nombre);
+    fetchProducts(nombre);
   };
 
   const editClient = (client: ClientRecord) => {
@@ -2815,6 +2861,39 @@ export default function App() {
                           </div>
                         )
                       })}
+                    </div>
+                  )}
+
+                  {quoteItems.length > 0 && (
+                    <div className="mt-3 p-3 border border-purple-100 rounded-xl bg-purple-50/60">
+                      <button
+                        type="button"
+                        onClick={suggestComplementaryEquipment}
+                        disabled={aiEquipLoading}
+                        className="w-full text-[11px] font-black text-purple-700 hover:text-purple-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                      >
+                        {aiEquipLoading ? 'Analizando cotizacion...' : '✨ Sugerir equipo complementario'}
+                      </button>
+
+                      {aiEquipChecked && aiEquipSuggestions.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {aiEquipSuggestions.map((item, idx) => (
+                            <div key={idx} className="flex items-start justify-between gap-2 bg-white rounded-lg border border-purple-100 p-2">
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-bold text-slate-800 truncate">{item.nombre}</div>
+                                <div className="text-[10px] text-slate-500 leading-snug">{item.motivo}</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => searchSuggestion(item.nombre)}
+                                className="shrink-0 h-7 px-2.5 text-[10px] font-black uppercase text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-md"
+                              >
+                                Buscar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
