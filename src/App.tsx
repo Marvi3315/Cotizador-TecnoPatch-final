@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { jsPDF } from 'jspdf';
-import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil, Eye, Copy, Download, KeyRound, ShieldCheck, MessageCircle, Sparkles } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Minus, X, Info, Image as ImageIcon, FileText, History, Printer, Trash, Save, ArrowUp, Users, CalendarDays, ClipboardList, UserPlus, Phone, Mail, MapPin, CheckCircle2, Clock3, Camera, Network, ShieldAlert, Zap, Package, Check, Home, Pencil, Eye, Copy, Download, KeyRound, ShieldCheck, MessageCircle, Sparkles, GripVertical } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -161,6 +161,8 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [manualTitle, setManualTitle] = useState('');
   const [manualCategory, setManualCategory] = useState('Material');
   const [manualUnit, setManualUnit] = useState('pz');
@@ -925,6 +927,40 @@ export default function App() {
   const searchSuggestion = (nombre: string) => {
     setSearchTerm(nombre);
     fetchProducts(nombre);
+  };
+
+  const handleItemDragStart = (id: string) => (e: React.DragEvent) => {
+    setDraggedItemId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleItemDragOver = (id: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (id !== dragOverItemId) setDragOverItemId(id);
+  };
+
+  const handleItemDrop = (targetId: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverItemId(null);
+    if (!draggedItemId || draggedItemId === targetId) {
+      setDraggedItemId(null);
+      return;
+    }
+    setQuoteItems(current => {
+      const fromIndex = current.findIndex(i => i.product.producto_id === draggedItemId);
+      const toIndex = current.findIndex(i => i.product.producto_id === targetId);
+      if (fromIndex === -1 || toIndex === -1) return current;
+      const updated = [...current];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return updated;
+    });
+    setDraggedItemId(null);
+  };
+
+  const handleItemDragEnd = () => {
+    setDraggedItemId(null);
+    setDragOverItemId(null);
   };
 
   const addManualItemsFromAi = (items: Array<{ nombre: string; cantidad: number; precioUnitario: number }>) => {
@@ -2014,7 +2050,7 @@ export default function App() {
       <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowHistory(true)}>
         <History size={16} />
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 relative" onClick={() => setShowMobileCart(true)}>
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 relative" onClick={() => { setActiveModule('cotizador'); setShowMobileCart(true); }}>
         <ShoppingCart size={16} />
         {quoteItems.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-[8px] text-white w-4 h-4 rounded-full flex items-center justify-center">{quoteItems.length}</span>}
       </Button>
@@ -2153,7 +2189,7 @@ export default function App() {
       <History size={16} /> <span className="hidden xl:inline">Historial</span>
     </Button>
 
-    <Button variant="outline" size="sm" className="hidden md:flex gap-2 h-9 p-2 px-3 border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg shrink-0 relative" onClick={() => setShowMobileCart(true)}>
+    <Button variant="outline" size="sm" className="hidden md:flex gap-2 h-9 p-2 px-3 border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg shrink-0 relative" onClick={() => { setActiveModule('cotizador'); setShowMobileCart(true); }}>
       <ShoppingCart size={16} />
       <span className="hidden lg:inline">Cotizacion</span>
       {quoteItems.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-[8px] text-white min-w-4 h-4 px-1 rounded-full flex items-center justify-center">{quoteItems.length}</span>}
@@ -2831,8 +2867,24 @@ export default function App() {
                         const gananciaPorcentaje = costoBase > 0 ? (ganancia / costoBase) * 100 : 0;
 
                         return (
-                          <div key={item.product.producto_id} className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm group relative">
+                          <div
+                            key={item.product.producto_id}
+                            draggable={false}
+                            onDragOver={handleItemDragOver(item.product.producto_id)}
+                            onDrop={handleItemDrop(item.product.producto_id)}
+                            onDragEnd={handleItemDragEnd}
+                            className={`p-3 bg-white border rounded-lg shadow-sm group relative transition-all ${draggedItemId === item.product.producto_id ? 'opacity-40' : ''} ${dragOverItemId === item.product.producto_id && draggedItemId && draggedItemId !== item.product.producto_id ? 'border-blue-400 border-2 ring-2 ring-blue-100' : 'border-slate-200'}`}
+                          >
                             <div className="flex gap-3">
+                              <div
+                                draggable
+                                onDragStart={handleItemDragStart(item.product.producto_id)}
+                                onDragEnd={handleItemDragEnd}
+                                className="shrink-0 flex items-center cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 touch-none"
+                                title="Arrastra para reordenar"
+                              >
+                                <GripVertical size={16} />
+                              </div>
                               <div className="w-12 h-12 bg-slate-50 border rounded-md p-1 shrink-0 flex items-center justify-center">
                                 {item.product.img_portada ? (
                                   <img src={item.product.img_portada} className="w-full h-full object-contain" alt="" />
