@@ -58,8 +58,29 @@ export default async function handler(req: any, res: any) {
           contents,
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 600,
-            responseMimeType: 'application/json'
+            maxOutputTokens: 1536,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                reply: { type: 'STRING' },
+                clientId: { type: 'STRING', nullable: true },
+                clientNameGuess: { type: 'STRING', nullable: true },
+                items: {
+                  type: 'ARRAY',
+                  items: {
+                    type: 'OBJECT',
+                    properties: {
+                      nombre: { type: 'STRING' },
+                      cantidad: { type: 'NUMBER' },
+                      precioUnitario: { type: 'NUMBER' }
+                    },
+                    required: ['nombre', 'cantidad', 'precioUnitario']
+                  }
+                }
+              },
+              required: ['reply', 'items']
+            }
           }
         })
       }

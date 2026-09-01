@@ -56,8 +56,23 @@ const callGemini = async (prompt: string, asJson: boolean) => {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.4,
-          maxOutputTokens: 500,
-          ...(asJson ? { responseMimeType: 'application/json' } : {})
+          maxOutputTokens: 900,
+          ...(asJson
+            ? {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                  type: 'ARRAY',
+                  items: {
+                    type: 'OBJECT',
+                    properties: {
+                      nombre: { type: 'STRING' },
+                      motivo: { type: 'STRING' }
+                    },
+                    required: ['nombre', 'motivo']
+                  }
+                }
+              }
+            : {})
         }
       })
     }

@@ -354,22 +354,11 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('nova-chat-history');
-      if (saved) setChatMessages(JSON.parse(saved));
+      localStorage.removeItem('nova-chat-history');
     } catch (e) {
-      console.warn('No se pudo cargar el historial del chat', e);
+      // no-op
     }
   }, []);
-
-  useEffect(() => {
-    try {
-      if (chatMessages.length > 0) {
-        localStorage.setItem('nova-chat-history', JSON.stringify(chatMessages.slice(-60)));
-      }
-    } catch (e) {
-      console.warn('No se pudo guardar el historial del chat', e);
-    }
-  }, [chatMessages]);
 
   useEffect(() => {
     if (!authReady || !auth) {
@@ -4539,7 +4528,7 @@ export default function App() {
 
           {/* Floating AI Chat Widget - oculto en vista previa e impresion */}
           {!showPreview && (
-            <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3 print:hidden">
+            <div className="fixed bottom-24 right-5 z-50 flex flex-col items-end gap-3 print:hidden">
             {chatOpen && (
               <div className="w-[320px] sm:w-[360px] h-[440px] bg-white rounded-2xl shadow-2xl border border-indigo-100 flex flex-col overflow-hidden">
                 <div className="px-3 py-2.5 bg-indigo-600 text-white flex items-center justify-between shrink-0">
