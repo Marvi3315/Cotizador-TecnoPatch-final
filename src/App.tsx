@@ -161,6 +161,8 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const chatInputInicioRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatInputFloatingRef = useRef<HTMLTextAreaElement | null>(null);
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [manualTitle, setManualTitle] = useState('');
@@ -1003,6 +1005,8 @@ export default function App() {
     const priorHistory = chatMessages;
     setChatMessages(current => [...current, { role: 'user', content: message }]);
     setChatInput('');
+    if (chatInputInicioRef.current) chatInputInicioRef.current.style.height = 'auto';
+    if (chatInputFloatingRef.current) chatInputFloatingRef.current.style.height = 'auto';
     setChatLoading(true);
 
     try {
@@ -1042,7 +1046,8 @@ export default function App() {
       }
     } catch (error: any) {
       console.error('sendChatMessage error:', error);
-      setChatMessages(current => [...current, { role: 'assistant', content: 'Tuve un problema para responder, intenta de nuevo por favor.' }]);
+      const friendlyMessage = error.message || 'Tuve un problema para responder, intenta de nuevo por favor.';
+      setChatMessages(current => [...current, { role: 'assistant', content: friendlyMessage }]);
       toast.error(error.message || 'Error al consultar la IA');
     } finally {
       setChatLoading(false);
@@ -3411,20 +3416,31 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                        <div className="p-2 border-t border-indigo-100 flex gap-2 shrink-0 bg-white/60">
-                          <Input
+                        <div className="p-2 border-t border-indigo-100 flex gap-2 shrink-0 bg-white/60 items-end">
+                          <textarea
                             name="ai-chat-inicio"
-                            className="h-9 text-xs bg-white"
-                            placeholder="Escribe aqui..."
+                            ref={chatInputInicioRef}
+                            rows={1}
+                            className="flex-1 resize-none text-xs bg-white border border-slate-200 rounded-md px-3 py-2 leading-relaxed max-h-28 overflow-y-auto focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            placeholder="Escribe aqui... (Enter para enviar, Shift+Enter para bajar de linea)"
                             value={chatInput}
-                            onChange={e => setChatInput(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter' && !chatLoading) sendChatMessage(); }}
+                            onChange={e => {
+                              setChatInput(e.target.value);
+                              e.target.style.height = 'auto';
+                              e.target.style.height = `${Math.min(e.target.scrollHeight, 112)}px`;
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && !e.shiftKey && !chatLoading) {
+                                e.preventDefault();
+                                sendChatMessage();
+                              }
+                            }}
                           />
                           <Button
                             type="button"
                             onClick={sendChatMessage}
                             disabled={chatLoading || !chatInput.trim()}
-                            className="h-9 px-3 bg-indigo-600 hover:bg-indigo-700 text-white"
+                            className="h-9 px-3 bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
                           >
                             <ArrowUp size={16} />
                           </Button>
@@ -4614,20 +4630,31 @@ export default function App() {
                     </div>
                   )}
                 </div>
-                <div className="p-2 border-t border-indigo-100 flex gap-2 shrink-0 bg-white">
-                  <Input
+                <div className="p-2 border-t border-indigo-100 flex gap-2 shrink-0 bg-white items-end">
+                  <textarea
                     name="ai-chat-floating"
-                    className="h-9 text-xs"
-                    placeholder="Escribe aqui..."
+                    ref={chatInputFloatingRef}
+                    rows={1}
+                    className="flex-1 resize-none text-xs bg-white border border-slate-200 rounded-md px-3 py-2 leading-relaxed max-h-28 overflow-y-auto focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    placeholder="Escribe aqui... (Enter para enviar, Shift+Enter para bajar de linea)"
                     value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !chatLoading) sendChatMessage(); }}
+                    onChange={e => {
+                      setChatInput(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 112)}px`;
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey && !chatLoading) {
+                        e.preventDefault();
+                        sendChatMessage();
+                      }
+                    }}
                   />
                   <Button
                     type="button"
                     onClick={sendChatMessage}
                     disabled={chatLoading || !chatInput.trim()}
-                    className="h-9 px-3 bg-indigo-600 hover:bg-indigo-700 text-white"
+                    className="h-9 px-3 bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
                   >
                     <ArrowUp size={16} />
                   </Button>
