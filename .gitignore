@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+tecnopatch-cotizador-firebase-adminsdk-fbsvc-48bf0c68a7.json
+*.json

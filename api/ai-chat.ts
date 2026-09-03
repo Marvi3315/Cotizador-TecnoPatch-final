@@ -25,36 +25,20 @@ const buildContents = (history: ChatMessage[], message: string) => {
   return contents;
 };
 
-export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Metodo no permitido' });
-  }
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  try {
-    if (!GEMINI_API_KEY) {
-      return res.status(500).json({ error: 'Falta configurar GEMINI_API_KEY en las variables de entorno.' });
-    }
+const callGeminiChat = async (systemText: string, contents: any[]) => {
+  const maxAttempts = 3;
+  let lastError: any = null;
 
-    const { message, history, clients } = req.body || {};
-    if (!message || typeof message !== 'string' || !message.trim()) {
-      return res.status(400).json({ error: 'Escribe un mensaje antes de enviar.' });
-    }
-
-    const clientList = (Array.isArray(clients) ? clients : [] as ClientRef[])
-      .map((c: ClientRef) => `- id:"${c.id}" nombre:"${c.name || ''}" empresa:"${c.company || ''}"`)
-      .join('\n');
-
-    const contents = buildContents(Array.isArray(history) ? history : [], message);
-
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: `${SYSTEM_INSTRUCTION}\n\nClientes existentes en el CRM (para comparar nombres):\n${clientList || 'Sin clientes registrados.'}` }]
-          },
+          systemInstruction: { parts: [{ text: systemText }] },
           contents,
           generationConfig: {
             temperature: 0.7,
@@ -87,9 +71,60 @@ export default async function handler(req: any, res: any) {
     );
 
     const data = await response.json();
-    if (!response.ok) {
-      console.error('Gemini error:', data);
-      return res.status(response.status).json({ error: data?.error?.message || 'Error al consultar Gemini' });
+
+    if (response.ok) {
+      return data;
+    }
+
+    const isOverloaded = response.status === 503 || response.status === 429;
+    lastError = { status: response.status, data };
+
+    if (isOverloaded && attempt < maxAttempts) {
+      console.warn(`Gemini ocupado (intento ${attempt}/${maxAttempts}), reintentando...`);
+      await sleep(attempt * 800);
+      continue;
+    }
+
+    throw lastError;
+  }
+
+  throw lastError;
+};
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Metodo no permitido' });
+  }
+
+  try {
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'Falta configurar GEMINI_API_KEY en las variables de entorno.' });
+    }
+
+    const { message, history, clients } = req.body || {};
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'Escribe un mensaje antes de enviar.' });
+    }
+
+    const clientList = (Array.isArray(clients) ? clients : [] as ClientRef[])
+      .map((c: ClientRef) => `- id:"${c.id}" nombre:"${c.name || ''}" empresa:"${c.company || ''}"`)
+      .join('\n');
+
+    const contents = buildContents(Array.isArray(history) ? history : [], message);
+    const systemText = `${SYSTEM_INSTRUCTION}\n\nClientes existentes en el CRM (para comparar nombres):\n${clientList || 'Sin clientes registrados.'}`;
+
+    let data: any;
+    try {
+      data = await callGeminiChat(systemText, contents);
+    } catch (err: any) {
+      console.error('Gemini error tras reintentos:', err);
+      const status = err?.status || 500;
+      const isOverloaded = status === 503 || status === 429;
+      return res.status(status).json({
+        error: isOverloaded
+          ? 'Nova esta saturada en este momento (mucha demanda en Gemini). Intenta de nuevo en unos segundos.'
+          : (err?.data?.error?.message || 'Error al consultar Gemini')
+      });
     }
 
     const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
