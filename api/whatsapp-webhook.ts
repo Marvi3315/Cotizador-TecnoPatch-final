@@ -1,7 +1,7 @@
-import { getAdminDb } from './_lib/firebaseAdmin';
-import { getNextQuoteNumber } from './_lib/quoteNumber';
-import { buildQuotePdfBuffer } from './_lib/quotePdf';
-import { sendWhatsAppText, uploadWhatsAppMedia, sendWhatsAppDocument } from './_lib/whatsapp';
+import { getAdminDb } from './_lib/firebaseAdmin.js';
+import { getNextQuoteNumber } from './_lib/quoteNumber.js';
+import { buildQuotePdfBuffer } from './_lib/quotePdf.js';
+import { sendWhatsAppText, uploadWhatsAppMedia, sendWhatsAppDocument } from './_lib/whatsapp.js';
 
 export const config = { maxDuration: 60 };
 
