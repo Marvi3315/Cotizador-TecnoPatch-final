@@ -46,7 +46,7 @@ const callGroq = async (systemText: string, messagesHistory: ChatMessage[], user
   ];
 
   const completion = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: 'llama3-8b-8192',
     messages: formattedMessages,
     response_format: { type: 'json_object' },
     temperature: 0.2,
