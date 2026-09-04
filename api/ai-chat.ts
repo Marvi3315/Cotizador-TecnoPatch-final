@@ -35,7 +35,7 @@ const callGroqChat = async (systemText: string, history: ChatMessage[], message:
 
   // Modelo ultra rápido y disponible globalmente en Groq
   const completion = await groq.chat.completions.create({
-    model: 'llama3-8b-8192',
+    model: 'openai/gpt-oss-20b',
     messages: formattedMessages,
     response_format: { type: 'json_object' },
     temperature: 0.7,
