@@ -28,7 +28,7 @@ NO pongas "readyToFinalize" en true hasta que:
 Si algo falta, responde SOLO pidiendo lo que falta de forma natural, y deja "readyToFinalize" en false. NUNCA digas que no puedes generar un PDF -- si tienes cliente y productos y ya te confirmaron, SIEMPRE puedes generarlo con "readyToFinalize": true.
 
 SIEMPRE responde SOLO con un JSON valido (sin markdown, sin texto fuera del JSON) con este formato exacto:
-{"reply": "tu respuesta conversacional y natural", "readyToFinalize": boolean, "clientId": "id del cliente si coincide con uno existente de la lista, o null", "newClient": {"name": "...", "phone": "...", "company": "..."} o null si vas a usar un cliente existente o aun no tienes esos datos, "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
+{"reply": "tu respuesta conversacional y natural", "readyToFinalize": boolean, "clientId": "id del cliente si coincide con uno existente de la lista, o null", "newClient": {"name": "...", "phone": "...", "company": "..."} o null si vas a usar un cliente existente o aun no tienes esos datos, "projectType": "breve tipo de proyecto si te lo mencionan (ej: Residencial, Comercial, Corporativo), o vacio", "projectScope": "breve descripcion del proyecto/instalacion si te la mencionan, o vacio", "technicalNotes": "notas tecnicas si te las mencionan (voltaje, calibre de cable, etc.), o vacio", "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
 
 // Función para llamar a Groq Cloud con manejo estricto de JSON
 const callGroq = async (systemText: string, messagesHistory: ChatMessage[], userText: string) => {
@@ -106,7 +106,7 @@ export default async function handler(req: any, res: any) {
 
     // Cargar clientes desde Firestore
     const clientsSnap = await db.collection('clients').get();
-    const clients = clientsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<{ id: string; name?: string; company?: string; phone?: string }>;
+    const clients = clientsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<{ id: string; name?: string; company?: string; phone?: string; rfc?: string }>;
     const clientListText = clients
       .map(c => `- id:"${c.id}" nombre:"${c.name || ''}" empresa:"${c.company || ''}" telefono:"${c.phone || ''}"`)
       .join('\n');
@@ -132,6 +132,9 @@ export default async function handler(req: any, res: any) {
       readyToFinalize: boolean;
       clientId: string | null;
       newClient: { name: string; phone: string; company?: string } | null;
+      projectType?: string;
+      projectScope?: string;
+      technicalNotes?: string;
       items: Array<{ nombre: string; cantidad: number; precioUnitario: number }>;
     };
 
@@ -157,12 +160,12 @@ export default async function handler(req: any, res: any) {
     }
 
     // Resolucion de cliente y guardado de cotización
-    let clientRecord: { id: string; name: string; company: string; phone: string } | null = null;
+    let clientRecord: { id: string; name: string; company: string; phone: string; rfc?: string } | null = null;
 
     if (parsed.clientId) {
       const found = clients.find(c => c.id === parsed.clientId);
       if (found) {
-        clientRecord = { id: found.id, name: found.name || '', company: found.company || '', phone: found.phone || '' };
+        clientRecord = { id: found.id, name: found.name || '', company: found.company || '', phone: found.phone || '', rfc: found.rfc || '' };
       }
     }
 
@@ -259,12 +262,17 @@ export default async function handler(req: any, res: any) {
       clientName: clientRecord.name,
       clientCompany: clientRecord.company,
       clientPhone: clientRecord.phone,
-      items,
+      clientRfc: clientRecord.rfc,
+      projectType: parsed.projectType || undefined,
+      projectScope: parsed.projectScope || undefined,
+      technicalNotes: parsed.technicalNotes || undefined,
+      items: items.map(it => ({ ...it, categoria: 'Partida manual (WhatsApp)' })),
       subtotal,
       tax,
       total,
       includeTax,
-      validityDays: 15
+      validityDays: 15,
+      exchangeRate: 18
     });
 
     const filename = `${quoteNumber}.pdf`;
