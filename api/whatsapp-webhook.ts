@@ -202,7 +202,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const subtotal = items.reduce((sum, it) => sum + (Number(it.cantidad) || 1) * (Number(it.precioUnitario) || 0), 0);
-    const includeTax = false;
+    const includeTax = true;
     const tax = includeTax ? subtotal * 0.16 : 0;
     const total = subtotal + tax;
 
@@ -222,7 +222,7 @@ export default async function handler(req: any, res: any) {
           modelo: 'WhatsApp',
           total_existencia: 0,
           titulo: it.nombre,
-          marca: 'Partida manual (WhatsApp)',
+          marca: 'Partida manual',
           img_portada: '',
           garantia: '',
           sat_key: '',
@@ -266,7 +266,7 @@ export default async function handler(req: any, res: any) {
       projectType: parsed.projectType || undefined,
       projectScope: parsed.projectScope || undefined,
       technicalNotes: parsed.technicalNotes || undefined,
-      items: items.map(it => ({ ...it, categoria: 'Partida manual (WhatsApp)' })),
+      items: items.map(it => ({ ...it, categoria: 'Partida manual' })),
       subtotal,
       tax,
       total,
