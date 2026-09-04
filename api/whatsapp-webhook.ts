@@ -117,6 +117,7 @@ export default async function handler(req: any, res: any) {
   // Siempre responder 200 a Meta lo antes posible para evitar reintentos duplicados,
   // pero procesamos primero porque las funciones serverless no soportan trabajo en segundo plano.
   try {
+    console.log('whatsapp-webhook: POST recibido. Body:', JSON.stringify(req.body));
     const entry = req.body?.entry?.[0];
     const change = entry?.changes?.[0];
     const value = change?.value;
@@ -124,6 +125,7 @@ export default async function handler(req: any, res: any) {
 
     if (!message) {
       // Es un evento de status (entregado, leido, etc.), no un mensaje nuevo. No hay nada que hacer.
+      console.log('whatsapp-webhook: sin mensaje en el payload. Body completo:', JSON.stringify(req.body));
       return res.status(200).json({ ok: true });
     }
 
