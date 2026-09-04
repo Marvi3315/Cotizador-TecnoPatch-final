@@ -31,10 +31,13 @@ NO pongas "readyToFinalize" en true hasta que:
 Si algo falta, responde SOLO pidiendo lo que falta de forma natural, y deja "readyToFinalize" en false. NUNCA digas que no puedes generar un PDF -- si tienes cliente y productos y ya te confirmaron, SIEMPRE puedes generarlo con "readyToFinalize": true.
 
 CAPACIDAD 2 - Consultar cotizaciones YA EXISTENTES:
-Si el vendedor pregunta por el estatus, folio, total o cualquier dato de una cotizacion que YA se hizo antes (frases como "como va la cotizacion de...", "cuanto le cotice a...", "buscame el folio...", "que cotizaciones tiene..."), NO intentes generar nada nuevo. En vez de eso, pon en "queryIntent" el texto de busqueda (nombre del cliente o numero de folio, tal cual lo menciono), y deja "readyToFinalize" en false. El sistema hara la busqueda real y respondera -- tu "reply" en este caso puede quedar vacio o como un simple "dejame checar...", no inventes datos de cotizaciones que no has visto.
+Si el vendedor pregunta por el estatus, folio, total o cualquier dato de una cotizacion que YA se hizo antes (frases como "como va la cotizacion de...", "cuanto le cotice a...", "buscame el folio...", "que cotizaciones tiene...", "la ultima cotizacion de..."), NO intentes generar nada nuevo. En vez de eso, pon en "queryIntent" el texto de busqueda (nombre del cliente o numero de folio, tal cual lo menciono), y deja "readyToFinalize" en false. El sistema hara la busqueda real y respondera -- tu "reply" en este caso puede quedar vacio o como un simple "dejame checar...", no inventes datos de cotizaciones que no has visto.
+
+CAPACIDAD 3 - Reenviar el PDF de una cotizacion existente:
+Si ya le mostraste al vendedor una lista de cotizaciones (capacidad 2) y ahora te pide el PDF de alguna especifica ("mandame esa", "la numero 2", "mandame el PDF del folio COT-2026-7245", "esa misma"), identifica de la conversacion anterior el folio EXACTO que esta pidiendo y ponlo en "resendFolio". Si no tienes claro a cual folio se refiere, pregunta cual (no adivines), y deja "resendFolio" en null.
 
 SIEMPRE responde SOLO con un JSON valido (sin markdown, sin texto fuera del JSON) con este formato exacto:
-{"reply": "tu respuesta conversacional y natural", "readyToFinalize": boolean, "queryIntent": "texto de busqueda si es capacidad 2, o null", "clientId": "id del cliente si coincide con uno existente de la lista, o null", "newClient": {"name": "...", "phone": "...", "company": "..."} o null si vas a usar un cliente existente o aun no tienes esos datos, "projectType": "breve tipo de proyecto si te lo mencionan (ej: Residencial, Comercial, Corporativo), o vacio", "projectScope": "breve descripcion del proyecto/instalacion si te la mencionan, o vacio", "technicalNotes": "notas tecnicas si te las mencionan (voltaje, calibre de cable, etc.), o vacio", "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
+{"reply": "tu respuesta conversacional y natural", "readyToFinalize": boolean, "queryIntent": "texto de busqueda si es capacidad 2, o null", "resendFolio": "folio exacto si es capacidad 3, o null", "clientId": "id del cliente si coincide con uno existente de la lista, o null", "newClient": {"name": "...", "phone": "...", "company": "..."} o null si vas a usar un cliente existente o aun no tienes esos datos, "projectType": "breve tipo de proyecto si te lo mencionan (ej: Residencial, Comercial, Corporativo), o vacio", "projectScope": "breve descripcion del proyecto/instalacion si te la mencionan, o vacio", "technicalNotes": "notas tecnicas si te las mencionan (voltaje, calibre de cable, etc.), o vacio", "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
 
 // Función para llamar a Groq Cloud con manejo estricto de JSON
 const callGroq = async (systemText: string, messagesHistory: ChatMessage[], userText: string) => {
@@ -137,6 +140,7 @@ export default async function handler(req: any, res: any) {
       reply: string;
       readyToFinalize: boolean;
       queryIntent?: string | null;
+      resendFolio?: string | null;
       clientId: string | null;
       newClient: { name: string; phone: string; company?: string } | null;
       projectType?: string;
@@ -151,6 +155,56 @@ export default async function handler(req: any, res: any) {
       console.error('JSON invalido recibido de Groq:', rawJsonText);
       await sendWhatsAppText(from, 'No entendi bien la solicitud, ¿me la puedes repetir?');
       return res.status(200).json({ ok: true });
+    }
+
+    // ---- Capacidad 3: reenviar el PDF de una cotizacion existente ----
+    if (parsed.resendFolio && parsed.resendFolio.trim()) {
+      const folio = parsed.resendFolio.trim();
+      const foundSnap = await db.collection('quoteHistory').where('quoteNumber', '==', folio).limit(1).get();
+
+      if (foundSnap.empty) {
+        const notFoundReply = `No encontre la cotizacion con folio "${folio}". ¿Me confirmas el numero exacto?`;
+        await sendWhatsAppText(from, notFoundReply);
+        await sessionRef.set({
+          messages: [...priorMessages, { role: 'user' as const, content: userText }, { role: 'assistant' as const, content: notFoundReply }].slice(-40),
+          updatedAt: Date.now()
+        });
+        return res.status(200).json({ ok: true, resent: false });
+      }
+
+      const oldQuote: any = foundSnap.docs[0].data();
+      const oldItems = (oldQuote.items || []).map((it: any) => ({
+        nombre: it.product?.titulo || 'Producto',
+        cantidad: Number(it.quantity) || 1,
+        precioUnitario: Number(it.unitPriceMxn) || 0,
+        categoria: it.product?.marca || 'Partida'
+      }));
+
+      const pdfBuffer = buildQuotePdfBuffer({
+        quoteNumber: oldQuote.quoteNumber,
+        date: oldQuote.date || '',
+        clientName: oldQuote.clientName || '',
+        clientCompany: oldQuote.clientCompany || '',
+        clientPhone: oldQuote.clientPhone || '',
+        items: oldItems,
+        subtotal: Number(oldQuote.subtotal) || 0,
+        tax: Number(oldQuote.tax) || 0,
+        total: Number(oldQuote.total) || 0,
+        includeTax: !!oldQuote.includeTax,
+        validityDays: oldQuote.validityDays || 15,
+        exchangeRate: Number(oldQuote.exchangeRate) || 18
+      });
+
+      const filename = `${oldQuote.quoteNumber}.pdf`;
+      const mediaId = await uploadWhatsAppMedia(pdfBuffer, filename);
+      const resendCaption = `Aqui tienes de nuevo la cotizacion ${oldQuote.quoteNumber} de ${oldQuote.clientCompany || oldQuote.clientName}.`;
+      await sendWhatsAppDocument(from, mediaId, filename, resendCaption);
+
+      await sessionRef.set({
+        messages: [...priorMessages, { role: 'user' as const, content: userText }, { role: 'assistant' as const, content: resendCaption }].slice(-40),
+        updatedAt: Date.now()
+      });
+      return res.status(200).json({ ok: true, resent: true, quoteNumber: oldQuote.quoteNumber });
     }
 
     // ---- Capacidad 2: consultar cotizaciones existentes (sin inventar datos) ----
