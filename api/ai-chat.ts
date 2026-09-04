@@ -2,7 +2,6 @@ import OpenAI from 'openai';
 
 export const config = { maxDuration: 60 };
 
-// Inicializar cliente de Groq utilizando la interfaz compatible con OpenAI
 const groq = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: 'https://api.groq.com/openai/v1',
@@ -34,8 +33,9 @@ const callGroqChat = async (systemText: string, history: ChatMessage[], message:
     { role: 'user', content: message }
   ];
 
+  // Modelo ultra rápido y disponible globalmente en Groq
   const completion = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile', // <--- ID verificado de Groq
+    model: 'llama-3.1-8b-instant',
     messages: formattedMessages,
     response_format: { type: 'json_object' },
     temperature: 0.7,
