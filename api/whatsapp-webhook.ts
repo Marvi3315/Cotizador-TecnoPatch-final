@@ -16,7 +16,10 @@ type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 const SYSTEM_INSTRUCTION = `Eres Nova, la asistente virtual inteligente de TecnoPatch (empresa de telecomunicaciones, CCTV, cableado y redes). Hablas con un vendedor del equipo de TecnoPatch de forma natural, amigable, cercana y relajada, en español de México. No suenas como un contestador automático ni haces preguntas tipo formulario.
 
-Tu trabajo es juntar la informacion necesaria para generar una cotizacion en PDF:
+Tienes DOS capacidades. En cada mensaje, decide cual aplica:
+
+CAPACIDAD 1 - Generar una cotizacion nueva:
+Junta la informacion necesaria:
 1. Un cliente: si mencionan un nombre que coincide con la lista de clientes existentes, usalo (clientId). Si no coincide con ninguno, necesitas al menos NOMBRE y TELEFONO del cliente nuevo antes de poder generar la cotizacion -- preguntalos si faltan, de forma natural y conversacional.
 2. Uno o mas productos, cada uno con cantidad y precio unitario. Si no te dan el precio de algo, preguntalo (nunca inventes precios).
 
@@ -27,8 +30,11 @@ NO pongas "readyToFinalize" en true hasta que:
 
 Si algo falta, responde SOLO pidiendo lo que falta de forma natural, y deja "readyToFinalize" en false. NUNCA digas que no puedes generar un PDF -- si tienes cliente y productos y ya te confirmaron, SIEMPRE puedes generarlo con "readyToFinalize": true.
 
+CAPACIDAD 2 - Consultar cotizaciones YA EXISTENTES:
+Si el vendedor pregunta por el estatus, folio, total o cualquier dato de una cotizacion que YA se hizo antes (frases como "como va la cotizacion de...", "cuanto le cotice a...", "buscame el folio...", "que cotizaciones tiene..."), NO intentes generar nada nuevo. En vez de eso, pon en "queryIntent" el texto de busqueda (nombre del cliente o numero de folio, tal cual lo menciono), y deja "readyToFinalize" en false. El sistema hara la busqueda real y respondera -- tu "reply" en este caso puede quedar vacio o como un simple "dejame checar...", no inventes datos de cotizaciones que no has visto.
+
 SIEMPRE responde SOLO con un JSON valido (sin markdown, sin texto fuera del JSON) con este formato exacto:
-{"reply": "tu respuesta conversacional y natural", "readyToFinalize": boolean, "clientId": "id del cliente si coincide con uno existente de la lista, o null", "newClient": {"name": "...", "phone": "...", "company": "..."} o null si vas a usar un cliente existente o aun no tienes esos datos, "projectType": "breve tipo de proyecto si te lo mencionan (ej: Residencial, Comercial, Corporativo), o vacio", "projectScope": "breve descripcion del proyecto/instalacion si te la mencionan, o vacio", "technicalNotes": "notas tecnicas si te las mencionan (voltaje, calibre de cable, etc.), o vacio", "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
+{"reply": "tu respuesta conversacional y natural", "readyToFinalize": boolean, "queryIntent": "texto de busqueda si es capacidad 2, o null", "clientId": "id del cliente si coincide con uno existente de la lista, o null", "newClient": {"name": "...", "phone": "...", "company": "..."} o null si vas a usar un cliente existente o aun no tienes esos datos, "projectType": "breve tipo de proyecto si te lo mencionan (ej: Residencial, Comercial, Corporativo), o vacio", "projectScope": "breve descripcion del proyecto/instalacion si te la mencionan, o vacio", "technicalNotes": "notas tecnicas si te las mencionan (voltaje, calibre de cable, etc.), o vacio", "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
 
 // Función para llamar a Groq Cloud con manejo estricto de JSON
 const callGroq = async (systemText: string, messagesHistory: ChatMessage[], userText: string) => {
@@ -130,6 +136,7 @@ export default async function handler(req: any, res: any) {
     let parsed: {
       reply: string;
       readyToFinalize: boolean;
+      queryIntent?: string | null;
       clientId: string | null;
       newClient: { name: string; phone: string; company?: string } | null;
       projectType?: string;
@@ -144,6 +151,43 @@ export default async function handler(req: any, res: any) {
       console.error('JSON invalido recibido de Groq:', rawJsonText);
       await sendWhatsAppText(from, 'No entendi bien la solicitud, ¿me la puedes repetir?');
       return res.status(200).json({ ok: true });
+    }
+
+    // ---- Capacidad 2: consultar cotizaciones existentes (sin inventar datos) ----
+    if (parsed.queryIntent && parsed.queryIntent.trim()) {
+      const searchTerm = parsed.queryIntent.trim().toLowerCase();
+      const quotesSnap = await db.collection('quoteHistory').orderBy('savedAt', 'desc').limit(300).get();
+      const matches = quotesSnap.docs
+        .map(d => d.data())
+        .filter((q: any) => {
+          const haystack = `${q.quoteNumber || ''} ${q.clientName || ''} ${q.clientCompany || ''}`.toLowerCase();
+          return haystack.includes(searchTerm);
+        })
+        .slice(0, 5);
+
+      let queryReply: string;
+      if (matches.length === 0) {
+        queryReply = `No encontre ninguna cotizacion que coincida con "${parsed.queryIntent.trim()}". ¿Me confirmas el nombre del cliente o el numero de folio?`;
+      } else {
+        const lines = matches.map((q: any) => {
+          const total = Number(q.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+          return `• ${q.quoteNumber} - ${q.clientCompany || q.clientName || 'Sin nombre'} - $${total} MXN - ${q.quoteStatus || 'Borrador'} (${q.date || ''})`;
+        });
+        queryReply = matches.length === 1
+          ? `Aqui esta:\n\n${lines[0]}`
+          : `Encontre ${matches.length} cotizaciones:\n\n${lines.join('\n')}`;
+      }
+
+      await sendWhatsAppText(from, queryReply);
+
+      const updatedMessagesQuery: ChatMessage[] = [
+        ...priorMessages,
+        { role: 'user' as const, content: userText },
+        { role: 'assistant' as const, content: queryReply }
+      ].slice(-40);
+      await sessionRef.set({ messages: updatedMessagesQuery, updatedAt: Date.now() });
+
+      return res.status(200).json({ ok: true, queried: true, matches: matches.length });
     }
 
     // Actualizar historial
