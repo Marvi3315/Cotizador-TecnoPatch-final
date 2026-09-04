@@ -72,6 +72,37 @@ const transcribeAudio = async (buffer: Buffer, mimeType: string): Promise<string
   return transcription.text || '';
 };
 
+// Analiza una imagen (foto, screenshot, lista escrita) usando el modelo de vision de Groq
+const analyzeImage = async (buffer: Buffer, mimeType: string, caption?: string): Promise<string> => {
+  const base64 = buffer.toString('base64');
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+
+  const visionPrompt = `Eres los ojos de Nova, asistente de TecnoPatch (telecomunicaciones, CCTV, cableado y redes). Un vendedor te mando esta imagen por WhatsApp${caption ? ` con el comentario: "${caption}"` : ''}.
+
+Describe con precision lo que ves, pensando en que esta informacion se va a usar para armar una cotizacion o dar una recomendacion tecnica:
+- Si es una lista de productos, screenshot de specs, o cotizacion vieja: transcribe EXACTAMENTE los nombres, modelos, cantidades y precios que alcances a leer (no inventes numeros que no veas claro).
+- Si es una foto de una instalacion, equipo existente, o sitio de trabajo: describe que equipo identificas, su estado aparente, y cualquier detalle relevante para una instalacion o venta (espacio disponible, cableado existente, etc).
+- Si no es ninguna de esas cosas, describe brevemente que es.
+
+Responde solo con la descripcion en texto plano, en español, sin JSON ni markdown.`;
+
+  const completion = await groq.chat.completions.create({
+    model: 'qwen/qwen3.6-27b',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: visionPrompt },
+          { type: 'image_url', image_url: { url: dataUrl } }
+        ] as any
+      }
+    ],
+    temperature: 0.2
+  });
+
+  return completion.choices[0]?.message?.content?.trim() || '';
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method === 'GET') {
     const mode = req.query['hub.mode'];
@@ -113,8 +144,8 @@ export default async function handler(req: any, res: any) {
     }
     await dedupeRef.set({ processedAt: Date.now() });
 
-    if (message.type !== 'text' && message.type !== 'audio') {
-      await sendWhatsAppText(from, 'Por ahora puedo leer texto y notas de voz. Escribeme o mandame un audio con el cliente, producto, cantidad y precio.');
+    if (message.type !== 'text' && message.type !== 'audio' && message.type !== 'image') {
+      await sendWhatsAppText(from, 'Por ahora puedo leer texto, notas de voz y fotos. Escribeme, mandame un audio, o una imagen con el cliente, producto, cantidad y precio.');
       return res.status(200).json({ ok: true });
     }
 
@@ -122,7 +153,7 @@ export default async function handler(req: any, res: any) {
 
     if (message.type === 'text') {
       userText = message.text?.body?.trim();
-    } else {
+    } else if (message.type === 'audio') {
       try {
         const mediaId = message.audio?.id;
         if (!mediaId) throw new Error('Sin id de audio');
@@ -137,6 +168,24 @@ export default async function handler(req: any, res: any) {
       }
       if (!userText) {
         await sendWhatsAppText(from, 'No logre entender bien tu nota de voz. ¿Me la puedes repetir o escribir?');
+        return res.status(200).json({ ok: true });
+      }
+    } else {
+      try {
+        const mediaId = message.image?.id;
+        if (!mediaId) throw new Error('Sin id de imagen');
+        const caption = message.image?.caption?.trim();
+        const { buffer, mimeType } = await downloadWhatsAppMedia(mediaId);
+        const description = await analyzeImage(buffer, mimeType, caption);
+        console.log('whatsapp-webhook: imagen analizada:', description);
+        userText = `[El vendedor mando una imagen. Esto es lo que se ve en la foto:]\n${description}${caption ? `\n\n[Comentario del vendedor junto a la foto: "${caption}"]` : ''}`;
+      } catch (err) {
+        console.error('Error analizando imagen:', err);
+        await sendWhatsAppText(from, 'Tuve un problema al ver tu imagen. Intenta de nuevo o mejor descríbemela por texto.');
+        return res.status(200).json({ ok: true });
+      }
+      if (!userText) {
+        await sendWhatsAppText(from, 'No logre entender bien la imagen. ¿Me la puedes describir por texto?');
         return res.status(200).json({ ok: true });
       }
     }
