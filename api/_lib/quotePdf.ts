@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { LOGO_BASE64 } from './logoBase64.js';
 
 export type PdfQuoteItem = {
   nombre: string;
@@ -64,14 +65,14 @@ export const buildQuotePdfBuffer = (quote: PdfQuoteData): Buffer => {
   doc.setFillColor(...NAVY);
   doc.rect(margin, y, contentWidth, headerHeight, 'F');
 
+  // Logo real de TecnoPatch
+  const logoW = 22;
+  const logoH = logoW * (439 / 568);
   doc.setFillColor(...WHITE);
-  doc.roundedRect(margin + 5, y + 6, 18, 18, 2, 2, 'F');
-  doc.setTextColor(...NAVY);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('TP', margin + 14, y + 17, { align: 'center' });
+  doc.roundedRect(margin + 5, y + (headerHeight - logoH - 4) / 2, logoW + 4, logoH + 4, 2, 2, 'F');
+  doc.addImage(LOGO_BASE64, 'PNG', margin + 7, y + (headerHeight - logoH) / 2, logoW, logoH);
 
-  const textX = margin + 28;
+  const textX = margin + 34;
   doc.setTextColor(...WHITE);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(17);
