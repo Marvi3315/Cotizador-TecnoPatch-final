@@ -72,3 +72,26 @@ export const sendWhatsAppDocument = async (to: string, mediaId: string, filename
     console.error('Error enviando documento WhatsApp:', data);
   }
 };
+
+export const downloadWhatsAppMedia = async (mediaId: string): Promise<{ buffer: Buffer; mimeType: string }> => {
+  const { token } = getConfig();
+
+  const metaResponse = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const metaData = await metaResponse.json();
+  if (!metaResponse.ok || !metaData.url) {
+    console.error('Error obteniendo URL de media WhatsApp:', metaData);
+    throw new Error('No se pudo obtener el archivo de WhatsApp.');
+  }
+
+  const fileResponse = await fetch(metaData.url, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!fileResponse.ok) {
+    throw new Error('No se pudo descargar el archivo de WhatsApp.');
+  }
+
+  const arrayBuffer = await fileResponse.arrayBuffer();
+  return { buffer: Buffer.from(arrayBuffer), mimeType: metaData.mime_type || 'audio/ogg' };
+};

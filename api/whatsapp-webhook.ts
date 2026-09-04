@@ -1,8 +1,8 @@
 import { getAdminDb } from './_lib/firebaseAdmin.js';
 import { getNextQuoteNumber } from './_lib/quoteNumber.js';
 import { buildQuotePdfBuffer } from './_lib/quotePdf.js';
-import { sendWhatsAppText, uploadWhatsAppMedia, sendWhatsAppDocument } from './_lib/whatsapp.js';
-import OpenAI from 'openai';
+import { sendWhatsAppText, uploadWhatsAppMedia, sendWhatsAppDocument, downloadWhatsAppMedia } from './_lib/whatsapp.js';
+import OpenAI, { toFile } from 'openai';
 
 export const config = { maxDuration: 60 };
 
@@ -60,6 +60,18 @@ const callGroq = async (systemText: string, messagesHistory: ChatMessage[], user
   return completion.choices[0]?.message?.content || '{}';
 };
 
+// Transcribe una nota de voz de WhatsApp usando Whisper de Groq (gratis)
+const transcribeAudio = async (buffer: Buffer, mimeType: string): Promise<string> => {
+  const extension = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : mimeType.includes('mpeg') ? 'mp3' : 'ogg';
+  const file = await toFile(buffer, `audio.${extension}`, { type: mimeType });
+  const transcription = await groq.audio.transcriptions.create({
+    file,
+    model: 'whisper-large-v3-turbo',
+    language: 'es'
+  });
+  return transcription.text || '';
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method === 'GET') {
     const mode = req.query['hub.mode'];
@@ -101,12 +113,34 @@ export default async function handler(req: any, res: any) {
     }
     await dedupeRef.set({ processedAt: Date.now() });
 
-    if (message.type !== 'text') {
-      await sendWhatsAppText(from, 'Por ahora solo puedo leer mensajes de texto. Escribeme el cliente, producto, cantidad y precio, por favor.');
+    if (message.type !== 'text' && message.type !== 'audio') {
+      await sendWhatsAppText(from, 'Por ahora puedo leer texto y notas de voz. Escribeme o mandame un audio con el cliente, producto, cantidad y precio.');
       return res.status(200).json({ ok: true });
     }
 
-    const userText = message.text?.body?.trim();
+    let userText: string | undefined;
+
+    if (message.type === 'text') {
+      userText = message.text?.body?.trim();
+    } else {
+      try {
+        const mediaId = message.audio?.id;
+        if (!mediaId) throw new Error('Sin id de audio');
+        const { buffer, mimeType } = await downloadWhatsAppMedia(mediaId);
+        const transcription = await transcribeAudio(buffer, mimeType);
+        userText = transcription.trim();
+        console.log('whatsapp-webhook: audio transcrito:', userText);
+      } catch (err) {
+        console.error('Error transcribiendo audio:', err);
+        await sendWhatsAppText(from, 'Tuve un problema al escuchar tu nota de voz. Intenta de nuevo o mejor escribeme el mensaje.');
+        return res.status(200).json({ ok: true });
+      }
+      if (!userText) {
+        await sendWhatsAppText(from, 'No logre entender bien tu nota de voz. ¿Me la puedes repetir o escribir?');
+        return res.status(200).json({ ok: true });
+      }
+    }
+
     if (!userText) {
       return res.status(200).json({ ok: true });
     }
