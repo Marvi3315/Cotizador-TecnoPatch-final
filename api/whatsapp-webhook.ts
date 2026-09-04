@@ -129,7 +129,8 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ ok: true });
     }
 
-    const from = message.from as string;
+    const rawFrom = message.from as string;
+    const from = rawFrom.replace(/^521/, '52');
     const messageId = message.id as string;
 
     const db = getAdminDb();
