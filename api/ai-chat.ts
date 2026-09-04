@@ -1,5 +1,12 @@
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-3.6-flash';
+import OpenAI from 'openai';
+
+export const config = { maxDuration: 60 };
+
+// Inicializar cliente de Groq utilizando la interfaz compatible con OpenAI
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+});
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 type ClientRef = { id: string; name?: string; company?: string };
@@ -15,80 +22,27 @@ SIEMPRE responde SOLO con un JSON valido (sin markdown, sin texto fuera del JSON
 
 Si el usuario no pidio ninguna accion de cotizacion en su ultimo mensaje (solo esta platicando o preguntando algo), deja clientId y clientNameGuess en null e items como arreglo vacio, y responde normal en "reply".`;
 
-const buildContents = (history: ChatMessage[], message: string) => {
+const callGroqChat = async (systemText: string, history: ChatMessage[], message: string) => {
   const trimmedHistory = history.slice(-20);
-  const contents = trimmedHistory.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }]
-  }));
-  contents.push({ role: 'user', parts: [{ text: message }] });
-  return contents;
-};
+  
+  const formattedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemText },
+    ...trimmedHistory.map(m => ({
+      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
+      content: m.content
+    })),
+    { role: 'user', content: message }
+  ];
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  const completion = await groq.chat.completions.create({
+    model: 'llama-3.3-70b-versatile',
+    messages: formattedMessages,
+    response_format: { type: 'json_object' },
+    temperature: 0.7,
+    max_tokens: 1536,
+  });
 
-const callGeminiChat = async (systemText: string, contents: any[]) => {
-  const maxAttempts = 3;
-  let lastError: any = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemText }] },
-          contents,
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1536,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'OBJECT',
-              properties: {
-                reply: { type: 'STRING' },
-                clientId: { type: 'STRING', nullable: true },
-                clientNameGuess: { type: 'STRING', nullable: true },
-                items: {
-                  type: 'ARRAY',
-                  items: {
-                    type: 'OBJECT',
-                    properties: {
-                      nombre: { type: 'STRING' },
-                      cantidad: { type: 'NUMBER' },
-                      precioUnitario: { type: 'NUMBER' }
-                    },
-                    required: ['nombre', 'cantidad', 'precioUnitario']
-                  }
-                }
-              },
-              required: ['reply', 'items']
-            }
-          }
-        })
-      }
-    );
-
-    const data = await response.json();
-
-    if (response.ok) {
-      return data;
-    }
-
-    const isOverloaded = response.status === 503 || response.status === 429;
-    lastError = { status: response.status, data };
-
-    if (isOverloaded && attempt < maxAttempts) {
-      console.warn(`Gemini ocupado (intento ${attempt}/${maxAttempts}), reintentando...`);
-      await sleep(attempt * 800);
-      continue;
-    }
-
-    throw lastError;
-  }
-
-  throw lastError;
+  return completion.choices[0]?.message?.content || '{}';
 };
 
 export default async function handler(req: any, res: any) {
@@ -97,8 +51,8 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    if (!GEMINI_API_KEY) {
-      return res.status(500).json({ error: 'Falta configurar GEMINI_API_KEY en las variables de entorno.' });
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({ error: 'Falta configurar GROQ_API_KEY en las variables de entorno de Vercel.' });
     }
 
     const { message, history, clients } = req.body || {};
@@ -110,26 +64,20 @@ export default async function handler(req: any, res: any) {
       .map((c: ClientRef) => `- id:"${c.id}" nombre:"${c.name || ''}" empresa:"${c.company || ''}"`)
       .join('\n');
 
-    const contents = buildContents(Array.isArray(history) ? history : [], message);
     const systemText = `${SYSTEM_INSTRUCTION}\n\nClientes existentes en el CRM (para comparar nombres):\n${clientList || 'Sin clientes registrados.'}`;
 
-    let data: any;
+    let rawJsonText = '';
     try {
-      data = await callGeminiChat(systemText, contents);
+      rawJsonText = await callGroqChat(systemText, Array.isArray(history) ? history : [], message);
     } catch (err: any) {
-      console.error('Gemini error tras reintentos:', err);
-      const status = err?.status || 500;
-      const isOverloaded = status === 503 || status === 429;
-      return res.status(status).json({
-        error: isOverloaded
-          ? 'Nova esta saturada en este momento (mucha demanda en Gemini). Intenta de nuevo en unos segundos.'
-          : (err?.data?.error?.message || 'Error al consultar Gemini')
+      console.error('Groq Chat error:', err);
+      return res.status(500).json({
+        error: 'Nova tuvo un inconveniente temporal para procesar tu solicitud. Intenta de nuevo en unos segundos.'
       });
     }
 
-    const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
-    if (!text.trim()) {
-      return res.status(502).json({ error: 'Gemini no devolvio texto util. Intenta de nuevo.' });
+    if (!rawJsonText.trim()) {
+      return res.status(502).json({ error: 'No se obtuvo respuesta útil del motor de IA. Intenta de nuevo.' });
     }
 
     let parsed: {
@@ -138,16 +86,18 @@ export default async function handler(req: any, res: any) {
       clientNameGuess: string | null;
       items: Array<{ nombre: string; cantidad: number; precioUnitario: number }>;
     };
+
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(rawJsonText);
     } catch (e) {
-      console.error('No se pudo parsear JSON de Gemini:', text);
+      console.error('No se pudo parsear JSON de Groq:', rawJsonText);
       return res.status(502).json({ error: 'La IA respondio en un formato inesperado. Intenta de nuevo.' });
     }
 
     return res.status(200).json(parsed);
+
   } catch (error: any) {
-    console.error('ai-chat error:', error);
+    console.error('ai-chat error inesperado:', error);
     return res.status(500).json({ error: error.message || 'Error inesperado' });
   }
 }

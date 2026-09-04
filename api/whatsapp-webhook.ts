@@ -2,11 +2,15 @@ import { getAdminDb } from './_lib/firebaseAdmin.js';
 import { getNextQuoteNumber } from './_lib/quoteNumber.js';
 import { buildQuotePdfBuffer } from './_lib/quotePdf.js';
 import { sendWhatsAppText, uploadWhatsAppMedia, sendWhatsAppDocument } from './_lib/whatsapp.js';
+import OpenAI from 'openai';
 
 export const config = { maxDuration: 60 };
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-1.5-flash';
+// Inicializar cliente de Groq utilizando la interfaz compatible con OpenAI
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+});
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -30,73 +34,25 @@ SIEMPRE responde SOLO con un JSON valido (sin markdown, sin texto fuera del JSON
 
 Si readyToFinalize es true, "items" debe tener al menos un producto con precioUnitario mayor a 0.`;
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Función para llamar a Groq Cloud con manejo estricto de JSON
+const callGroq = async (systemText: string, messagesHistory: ChatMessage[], userText: string) => {
+  const formattedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemText },
+    ...messagesHistory.map(m => ({
+      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
+      content: m.content
+    })),
+    { role: 'user', content: userText }
+  ];
 
-const callGemini = async (systemText: string, contents: any[]) => {
-  const maxAttempts = 3;
-  let lastError: any = null;
+  const completion = await groq.chat.completions.create({
+    model: 'llama-3.3-70b-versatile',
+    messages: formattedMessages,
+    response_format: { type: 'json_object' },
+    temperature: 0.2,
+  });
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemText }] },
-          contents,
-          generationConfig: {
-            temperature: 0.5,
-            maxOutputTokens: 1024,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'OBJECT',
-              properties: {
-                reply: { type: 'STRING' },
-                readyToFinalize: { type: 'BOOLEAN' },
-                clientId: { type: 'STRING', nullable: true },
-                newClient: {
-                  type: 'OBJECT',
-                  nullable: true,
-                  properties: {
-                    name: { type: 'STRING' },
-                    phone: { type: 'STRING' },
-                    company: { type: 'STRING', nullable: true }
-                  },
-                  required: ['name', 'phone']
-                },
-                items: {
-                  type: 'ARRAY',
-                  items: {
-                    type: 'OBJECT',
-                    properties: {
-                      nombre: { type: 'STRING' },
-                      cantidad: { type: 'NUMBER' },
-                      precioUnitario: { type: 'NUMBER' }
-                    },
-                    required: ['nombre', 'cantidad', 'precioUnitario']
-                  }
-                }
-              },
-              required: ['reply', 'readyToFinalize', 'items']
-            }
-          }
-        })
-      }
-    );
-
-    const data = await response.json();
-    if (response.ok) return data;
-
-    const isOverloaded = response.status === 503 || response.status === 429;
-    lastError = { status: response.status, data };
-    if (isOverloaded && attempt < maxAttempts) {
-      await sleep(attempt * 800);
-      continue;
-    }
-    throw lastError;
-  }
-  throw lastError;
+  return completion.choices[0]?.message?.content || '{}';
 };
 
 export default async function handler(req: any, res: any) {
@@ -114,8 +70,6 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Metodo no permitido' });
   }
 
-  // Siempre responder 200 a Meta lo antes posible para evitar reintentos duplicados,
-  // pero procesamos primero porque las funciones serverless no soportan trabajo en segundo plano.
   try {
     console.log('whatsapp-webhook: POST recibido. Body:', JSON.stringify(req.body));
     const entry = req.body?.entry?.[0];
@@ -124,8 +78,7 @@ export default async function handler(req: any, res: any) {
     const message = value?.messages?.[0];
 
     if (!message) {
-      // Es un evento de status (entregado, leido, etc.), no un mensaje nuevo. No hay nada que hacer.
-      console.log('whatsapp-webhook: sin mensaje en el payload. Body completo:', JSON.stringify(req.body));
+      console.log('whatsapp-webhook: sin mensaje en el payload.');
       return res.status(200).json({ ok: true });
     }
 
@@ -135,7 +88,7 @@ export default async function handler(req: any, res: any) {
 
     const db = getAdminDb();
 
-    // Evitar procesar el mismo mensaje dos veces si Meta reintenta el webhook.
+    // Deduplicación de mensajes para evitar reintentos de Meta
     const dedupeRef = db.collection('whatsappProcessedMessages').doc(messageId);
     const dedupeSnap = await dedupeRef.get();
     if (dedupeSnap.exists) {
@@ -155,37 +108,29 @@ export default async function handler(req: any, res: any) {
 
     const senderName = value?.contacts?.[0]?.profile?.name || from;
 
-    // Cargar clientes existentes para que Nova pueda hacer match
+    // Cargar clientes desde Firestore
     const clientsSnap = await db.collection('clients').get();
     const clients = clientsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<{ id: string; name?: string; company?: string; phone?: string }>;
     const clientListText = clients
       .map(c => `- id:"${c.id}" nombre:"${c.name || ''}" empresa:"${c.company || ''}" telefono:"${c.phone || ''}"`)
       .join('\n');
 
-    // Cargar/guardar historial de esta conversacion de WhatsApp
+    // Cargar historial
     const sessionRef = db.collection('whatsappSessions').doc(from);
     const sessionSnap = await sessionRef.get();
     const priorMessages: ChatMessage[] = (sessionSnap.exists ? sessionSnap.data()?.messages : []) || [];
 
-    const contents = priorMessages.slice(-20).map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }));
-    contents.push({ role: 'user', parts: [{ text: userText }] });
-
     const systemText = `${SYSTEM_INSTRUCTION}\n\nClientes existentes en el CRM:\n${clientListText || 'Sin clientes registrados.'}`;
 
-    let geminiData: any;
+    let rawJsonText = '';
     try {
-      geminiData = await callGemini(systemText, contents);
+      rawJsonText = await callGroq(systemText, priorMessages.slice(-20), userText);
     } catch (err: any) {
-      console.error('Gemini error en WhatsApp:', err);
-      const isOverloaded = err?.status === 503 || err?.status === 429;
-      await sendWhatsAppText(from, isOverloaded ? 'Ando saturada un momento, mandame tu mensaje otra vez en unos segundos por favor.' : 'Tuve un problema para responder, intenta de nuevo.');
+      console.error('Error en Groq Cloud API:', err);
+      await sendWhatsAppText(from, 'Tuve un problema temporal para procesar tu mensaje. Intenta de nuevo en un momento.');
       return res.status(200).json({ ok: true });
     }
 
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
     let parsed: {
       reply: string;
       readyToFinalize: boolean;
@@ -193,15 +138,16 @@ export default async function handler(req: any, res: any) {
       newClient: { name: string; phone: string; company?: string } | null;
       items: Array<{ nombre: string; cantidad: number; precioUnitario: number }>;
     };
+
     try {
-      parsed = JSON.parse(rawText);
+      parsed = JSON.parse(rawJsonText);
     } catch (e) {
-      console.error('JSON invalido de Gemini en WhatsApp:', rawText);
-      await sendWhatsAppText(from, 'No entendi bien eso, me lo puedes repetir?');
+      console.error('JSON invalido recibido de Groq:', rawJsonText);
+      await sendWhatsAppText(from, 'No entendi bien la solicitud, ¿me la puedes repetir?');
       return res.status(200).json({ ok: true });
     }
 
-    // Guardar el turno en el historial de la conversacion
+    // Actualizar historial
     const updatedMessages: ChatMessage[] = [
       ...priorMessages,
       { role: 'user' as const, content: userText },
@@ -214,7 +160,7 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ ok: true });
     }
 
-    // ---- Finalizar: resolver cliente, crear cotizacion y mandar PDF ----
+    // Resolucion de cliente y guardado de cotización
     let clientRecord: { id: string; name: string; company: string; phone: string } | null = null;
 
     if (parsed.clientId) {
@@ -330,9 +276,9 @@ export default async function handler(req: any, res: any) {
     await sendWhatsAppDocument(from, mediaId, filename, `${parsed.reply}\n\nFolio: ${quoteNumber} · Total: $${total.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`);
 
     return res.status(200).json({ ok: true, quoteNumber });
+
   } catch (error: any) {
     console.error('whatsapp-webhook error:', error);
-    // Siempre 200 hacia Meta para que no reintente indefinidamente; el error ya quedo en logs.
     return res.status(200).json({ ok: false, error: error.message || 'Error inesperado' });
   }
 }
