@@ -41,9 +41,44 @@ const LIGHT_BG: [number, number, number] = [248, 250, 252];
 const BLUE_50: [number, number, number] = [239, 246, 255];
 const WHITE: [number, number, number] = [255, 255, 255];
 
+
+// Limpia caracteres que la fuente estandar del PDF (helvetica) no soporta.
+// Ej: el guion especial de WhatsApp (U+2011) hacia que el texto saliera con letras espaciadas.
+const cleanText = (value?: string): string => {
+  if (!value) return '';
+  return value
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u00A0\u2007\u202F\u2009\u200A\u2002\u2003]/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
+    .replace(/[^\u0000-\u00FF\u2122\u20AC]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const sanitizeQuote = (q: PdfQuoteData): PdfQuoteData => ({
+  ...q,
+  clientName: cleanText(q.clientName),
+  clientCompany: cleanText(q.clientCompany),
+  clientPhone: cleanText(q.clientPhone),
+  clientRfc: cleanText(q.clientRfc),
+  projectType: cleanText(q.projectType),
+  projectScope: q.projectScope ? q.projectScope.split('\n').map(cleanText).filter(Boolean).join('\n') : q.projectScope,
+  technicalNotes: q.technicalNotes ? q.technicalNotes.split('\n').map(cleanText).filter(Boolean).join('\n') : q.technicalNotes,
+  items: q.items.map(it => ({
+    ...it,
+    nombre: cleanText(it.nombre),
+    categoria: cleanText(it.categoria),
+    unidad: cleanText(it.unidad)
+  }))
+});
+
 const money = (value: number) => `$${(Number(value) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export const buildQuotePdfBuffer = (quote: PdfQuoteData): Buffer => {
+export const buildQuotePdfBuffer = (rawQuote: PdfQuoteData): Buffer => {
+  const quote = sanitizeQuote(rawQuote);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -226,7 +261,10 @@ export const buildQuotePdfBuffer = (quote: PdfQuoteData): Buffer => {
   drawTableHeader();
 
   quote.items.forEach((item, idx) => {
-    const nombreLines = doc.splitTextToSize(item.nombre || 'Producto sin nombre', contentWidth - 78);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    const nombreMaxWidth = colUnit - 22 - colDesc;
+    const nombreLines = doc.splitTextToSize(item.nombre || 'Producto sin nombre', nombreMaxWidth);
     const categoria = item.categoria || 'Partida manual';
     const unidad = item.unidad ? ` - Unidad: ${item.unidad}` : '';
     const rowHeight = Math.max(9, nombreLines.length * 4 + 6);
