@@ -14,54 +14,94 @@ const groq = new OpenAI({
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
-const SYSTEM_INSTRUCTION = `Eres Nova, la asistente virtual inteligente de TecnoPatch (empresa de telecomunicaciones, CCTV, cableado y redes). Hablas con un vendedor del equipo de TecnoPatch de forma natural, amigable, cercana y relajada, en español de México. No suenas como un contestador automático ni haces preguntas tipo formulario.
 
-Tienes DOS capacidades. En cada mensaje, decide cual aplica:
+const SYSTEM_INSTRUCTION = `Eres Nova, la asistente virtual inteligente de TecnoPatch (empresa de telecomunicaciones, CCTV, cableado y redes). Hablas con un vendedor del equipo de TecnoPatch de forma natural, amigable, cercana y relajada, en español de México. No suenas como un contestador automatico ni haces preguntas tipo formulario. Eres inteligente: entiendes mensajes desordenados, notas de voz transcritas, abreviaciones, errores de dedo y listas pegadas, y de ahi sacas los datos tu sola.
 
-CAPACIDAD 1 - Generar una cotizacion nueva:
-Junta la informacion necesaria:
-1. Un cliente: si mencionan un nombre que coincide con la lista de clientes existentes, usalo (clientId). Si no coincide con ninguno, necesitas al menos el NOMBRE del cliente nuevo -- preguntalo si falta. El TELEFONO es deseable pero OPCIONAL: si el vendedor dice que no lo tiene, que lo omitas, o lo deja en blanco (una o dos veces que te lo diga basta, no insistas mas), continua sin el (usa cadena vacia "") y NUNCA vuelvas a preguntar por el telefono en esta conversacion.
-2. Uno o mas productos, cada uno con cantidad y precio unitario. Si no te dan el precio de algo, preguntalo (nunca inventes precios).
+Tienes TRES capacidades. En cada mensaje decide cual aplica.
 
-3. ALCANCE DEL PROYECTO y NOTAS TECNICAS (opcionales): si en el mensaje vienen escritos (por ejemplo despues de "alcance:" o "notas tecnicas:"), copialos tal cual en "projectScope" y "technicalNotes". NUNCA los omitas si el vendedor los escribio.
+CAPACIDAD 1 - Generar una cotizacion nueva (tu trabajo es JUNTAR LOS DATOS; el sistema decide cuando se genera el PDF):
+Junta:
+1. Cliente: si el nombre coincide (aunque sea parcial o con errores de dedo) con la lista de clientes existentes, usa ese clientId. Si no coincide con ninguno, necesitas al menos el NOMBRE del cliente nuevo (newClient). El telefono es OPCIONAL: nunca lo exijas ni insistas; usa "" si no lo dan.
+2. Productos: cada uno con nombre, cantidad (si no dicen, 1) y precio unitario. Si falta el precio de algo, preguntalo (nunca inventes precios). Si el vendedor da un precio TOTAL de la partida y la cantidad, divide para sacar el unitario. Si dicen "mas IVA" o "con IVA" en un precio, usa el numero tal cual (el sistema suma el IVA aparte).
+3. Alcance del proyecto (projectScope), notas tecnicas (technicalNotes) y tipo de proyecto (projectType): si vienen escritos, copialos o redactalos bien en espanol profesional. Nunca los omitas si los dieron. Puedes corregir ortografia y redaccion pero sin cambiar el sentido ni los datos.
 
-NO pongas "readyToFinalize" en true hasta que:
-- Tengas el cliente resuelto (existente, o nuevo con al menos el nombre), Y
-- Tengas al menos un producto con cantidad y precio, Y
-- Ya hayas PREGUNTADO (una sola vez por cotizacion) si quieren agregar alcance del proyecto y/o notas tecnicas, y ya te hayan contestado. Cuando tengas cliente y productos y aun no hayas hecho esa pregunta (y el vendedor no haya dado ni descartado ya el alcance/notas), tu respuesta debe ser SOLO esa pregunta, algo como: "Ya tengo los productos de [cliente]. ¿Quieres agregar el alcance del proyecto y/o notas tecnicas? Si no, te la genero asi." con readyToFinalize en false. Si contestan que NO (o "asi esta bien", "sin notas", "genera"), pon readyToFinalize en true de inmediato, sin volver a preguntar. Si te dan el texto del alcance y/o las notas, guardalos en "projectScope" / "technicalNotes" y pon readyToFinalize en true de inmediato (esa respuesta ya cuenta como confirmacion). Pregunta solo por lo que FALTE: si ya vino el alcance pero no las notas tecnicas, pregunta unicamente si quieren agregar notas tecnicas (y viceversa); si ya vinieron los dos, o dijeron "sin alcance"/"sin notas", NO preguntes y genera.
-- Y la persona haya confirmado o pedido generarla (cualquier respuesta a la pregunta del alcance/notas cuenta como confirmacion; tambien frases como "genera", "mandala", "listo", "hazla", "en pdf", "mandame la cotizacion").
-
-Si algo falta, responde SOLO pidiendo lo que falta de forma natural, y deja "readyToFinalize" en false. NUNCA repitas la misma pregunta dos veces seguidas si ya te contestaron algo (aunque sea "no tiene" o "omitelo") -- avanza con lo que tengas. NUNCA digas que no puedes generar un PDF -- si tienes cliente y productos y ya te confirmaron, SIEMPRE puedes generarlo con "readyToFinalize": true.
+REGLAS:
+- Abajo recibes el "BORRADOR ACTUAL" con lo que ya se junto. Devuelve SIEMPRE el borrador COMPLETO actualizado (todas las partidas anteriores mas lo nuevo; si el vendedor corrige, cambia o quita algo, reflejalo). Nunca vacies "items" si el borrador ya tenia partidas, salvo que el vendedor pida quitarlas todas o empezar de nuevo.
+- NO preguntes por alcance ni notas tecnicas: eso lo pregunta el sistema una sola vez.
+- Si falta algo esencial (cliente, o precio de una partida), pidelo en UNA sola frase corta, sin repetir la pregunta si ya te contestaron (aunque sea "no se" u "omitelo": avanza con lo que tengas).
+- Pon "readyToFinalize" en true solo si el vendedor pide explicitamente generar/mandar la cotizacion ("genera", "mandala", "listo", "hazla", "asi esta bien", "no" como respuesta a si quiere agregar algo mas).
+- NUNCA digas que no puedes generar un PDF.
+- Si el vendedor te saluda, te da las gracias, o hace una pregunta general sobre equipos, instalacion o ventas de TecnoPatch (CCTV, redes, cableado, VoIP, control de acceso), contesta de forma util y breve en "reply" sin tocar el borrador.
 
 CAPACIDAD 2 - Consultar cotizaciones YA EXISTENTES:
-Si el vendedor pregunta por el estatus, folio, total o cualquier dato de una cotizacion que YA se hizo antes (frases como "como va la cotizacion de...", "cuanto le cotice a...", "buscame el folio...", "que cotizaciones tiene...", "la ultima cotizacion de...", "dame el historial", "cotizaciones existentes"), NO intentes generar nada nuevo. En vez de eso, pon en "queryIntent" el nombre del cliente o folio EXACTO que mencionaron (tal cual, nunca frases genericas). Si NO especifican un cliente o folio en particular (piden "el historial", "todas", "las que hay", etc.), pon "queryIntent" como cadena vacia "" -- eso le indica al sistema que muestre las mas recientes sin filtro. Deja "readyToFinalize" en false. El sistema hara la busqueda real y respondera -- tu "reply" en este caso puede quedar vacio o como un simple "dejame checar...", no inventes datos de cotizaciones que no has visto.
+Si preguntan por el estatus, folio, total o cualquier dato de una cotizacion que YA se hizo ("como va la cotizacion de...", "cuanto le cotice a...", "buscame el folio...", "que cotizaciones tiene...", "dame el historial"), NO generes nada nuevo. Pon en "queryIntent" el nombre del cliente o folio EXACTO que mencionaron. Si no especifican uno (piden "el historial", "todas"), pon queryIntent como cadena vacia "". El sistema hace la busqueda real; tu "reply" puede quedar vacio. No inventes datos que no has visto.
 
 CAPACIDAD 3 - Reenviar el PDF de una cotizacion existente:
-Si ya le mostraste al vendedor una lista de cotizaciones (capacidad 2) y ahora te pide el PDF de alguna especifica ("mandame esa", "la numero 2", "mandame el PDF del folio COT-2026-7245", "esa misma"), identifica de la conversacion anterior el folio EXACTO que esta pidiendo y ponlo en "resendFolio". Si no tienes claro a cual folio se refiere, pregunta cual (no adivines), y deja "resendFolio" en null.
+Si ya les mostraste una lista (capacidad 2) y piden el PDF de alguna ("mandame esa", "la numero 2", "el PDF del folio COT-2026-7245"), pon el folio EXACTO en "resendFolio". Si no tienes claro cual, pregunta cual y deja resendFolio en null.
 
-SIEMPRE responde SOLO con un JSON valido (sin markdown, sin texto fuera del JSON) con este formato exacto:
-{"reply": "tu respuesta conversacional y natural", "readyToFinalize": boolean, "queryIntent": "texto de busqueda si es capacidad 2 (cadena vacia si piden todas/historial sin filtro), o null si no aplica", "resendFolio": "folio exacto si es capacidad 3, o null", "clientId": "id del cliente si coincide con uno existente de la lista, o null", "newClient": {"name": "...", "phone": "... (puede ser cadena vacia si no la tienes)", "company": "..."} o null si vas a usar un cliente existente o aun no tienes ni el nombre, "projectType": "breve tipo de proyecto si te lo mencionan (ej: Residencial, Comercial, Corporativo), o vacio", "projectScope": "breve descripcion del proyecto/instalacion si te la mencionan, o vacio", "technicalNotes": "notas tecnicas si te las mencionan (voltaje, calibre de cable, etc.), o vacio", "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
+SIEMPRE responde SOLO con un JSON valido (sin markdown ni texto fuera del JSON) con este formato exacto:
+{"reply": "tu respuesta conversacional", "readyToFinalize": boolean, "queryIntent": "texto de busqueda o cadena vacia, o null si no aplica", "resendFolio": "folio exacto o null", "clientId": "id del cliente existente o null", "newClient": {"name": "...", "phone": "... (puede ser vacio)", "company": "..."} o null, "projectType": "tipo de proyecto o vacio", "projectScope": "alcance o vacio", "technicalNotes": "notas tecnicas o vacio", "items": [{"nombre": "...", "cantidad": numero, "precioUnitario": numero}]}`;
 
-// Función para llamar a Groq Cloud con manejo estricto de JSON
-const callGroq = async (systemText: string, messagesHistory: ChatMessage[], userText: string) => {
+type DraftItem = { nombre: string; cantidad: number; precioUnitario: number };
+type Draft = {
+  clientId: string | null;
+  newClient: { name: string; phone: string; company?: string } | null;
+  projectType: string;
+  projectScope: string;
+  technicalNotes: string;
+  items: DraftItem[];
+  extrasAsked: boolean;
+};
+const emptyDraft = (): Draft => ({ clientId: null, newClient: null, projectType: '', projectScope: '', technicalNotes: '', items: [], extrasAsked: false });
+const DRAFT_TTL_MS = 12 * 60 * 60 * 1000; // un borrador sin tocar por 12 h se descarta
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// Modelos en orden de preferencia: si uno falla (limite de tokens, caida, JSON roto) se prueba el siguiente.
+const MODEL_CHAIN: Array<{ model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
+  { model: 'openai/gpt-oss-120b', reasoning: 'medium' },
+  { model: 'openai/gpt-oss-20b', reasoning: 'medium' },
+  { model: 'llama-3.3-70b-versatile' }
+];
+
+const extractJson = (text: string): any => {
+  try { return JSON.parse(text); } catch { /* sigue */ }
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1));
+  throw new Error('Sin JSON en la respuesta');
+};
+
+// Llama al LLM con reintentos, fallback de modelo y parseo de JSON dentro del mismo ciclo.
+const callLLM = async (systemText: string, messagesHistory: ChatMessage[], userText: string): Promise<any> => {
   const formattedMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemText },
-    ...messagesHistory.map(m => ({
-      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user',
-      content: m.content
-    })),
+    ...messagesHistory.map(m => ({ role: (m.role === 'assistant' ? 'assistant' : 'user') as 'assistant' | 'user', content: m.content })),
     { role: 'user', content: userText }
   ];
 
-  const completion = await groq.chat.completions.create({
-    model: 'openai/gpt-oss-20b',
-    messages: formattedMessages,
-    response_format: { type: 'json_object' },
-    temperature: 0.2,
-  });
-
-  return completion.choices[0]?.message?.content || '{}';
+  let lastError: any = null;
+  for (const { model, reasoning } of MODEL_CHAIN) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const params: any = { model, messages: formattedMessages, response_format: { type: 'json_object' }, temperature: 0.2 };
+        if (reasoning) params.reasoning_effort = reasoning;
+        const completion = await groq.chat.completions.create(params);
+        const content = completion.choices[0]?.message?.content || '';
+        return extractJson(content);
+      } catch (err: any) {
+        lastError = err;
+        const status = err?.status;
+        console.error(`LLM fallo (${model}, intento ${attempt + 1}) status=${status}:`, err?.message || err);
+        if (status === 400 || status === 404) break; // modelo/params invalidos: pasar al siguiente modelo
+        if (status === 429) { await sleep(1200); if (attempt === 0) continue; break; }
+        await sleep(600);
+      }
+    }
+  }
+  throw lastError || new Error('LLM sin respuesta');
 };
+
 
 // Transcribe una nota de voz de WhatsApp usando Whisper de Groq (gratis)
 const transcribeAudio = async (buffer: Buffer, mimeType: string): Promise<string> => {
@@ -203,45 +243,64 @@ export default async function handler(req: any, res: any) {
     const clientsSnap = await db.collection('clients').get();
     const clients = clientsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<{ id: string; name?: string; company?: string; phone?: string; rfc?: string }>;
     const clientListText = clients
-      .map(c => `- id:"${c.id}" nombre:"${c.name || ''}" empresa:"${c.company || ''}" telefono:"${c.phone || ''}"`)
+      .slice(0, 250)
+      .map(c => `- id:"${c.id}" nombre:"${c.name || ''}" empresa:"${c.company || ''}"`)
       .join('\n');
 
-    // Cargar historial
+    // Cargar historial y borrador de la cotizacion en curso
     const sessionRef = db.collection('whatsappSessions').doc(from);
     const sessionSnap = await sessionRef.get();
-    const priorMessages: ChatMessage[] = (sessionSnap.exists ? sessionSnap.data()?.messages : []) || [];
+    const sessionData: any = sessionSnap.exists ? sessionSnap.data() : {};
+    const priorMessages: ChatMessage[] = sessionData?.messages || [];
+    let draft: Draft = { ...emptyDraft(), ...(sessionData?.draft || {}) };
+    if (Date.now() - (Number(sessionData?.draftUpdatedAt) || 0) > DRAFT_TTL_MS) draft = emptyDraft();
 
-    const systemText = `${SYSTEM_INSTRUCTION}\n\nClientes existentes en el CRM:\n${clientListText || 'Sin clientes registrados.'}`;
+    const saveSession = async (extraMessages: ChatMessage[], newDraft: Draft = draft) => {
+      await sessionRef.set({
+        messages: [...priorMessages, ...extraMessages].slice(-40),
+        draft: newDraft,
+        draftUpdatedAt: Date.now(),
+        updatedAt: Date.now()
+      });
+    };
 
-    let rawJsonText = '';
-    try {
-      rawJsonText = await callGroq(systemText, priorMessages.slice(-20), userText);
-    } catch (err: any) {
-      console.error('Error en Groq Cloud API:', err);
-      await sendWhatsAppText(from, 'Tuve un problema temporal para procesar tu mensaje. Intenta de nuevo en un momento.');
-      return res.status(200).json({ ok: true });
+    // Comando para tirar el borrador y empezar de cero
+    if (/^\s*(cancela(r)?|borra(r)?|olvida(lo)?|empezar de nuevo|empecemos de nuevo|nueva cotizaci[oó]n|reiniciar?)\b/i.test(userText) && userText.length < 40) {
+      const msg = 'Listo, descarte el borrador. Cuando quieras empezamos otra cotizacion: dime cliente, productos con cantidad y precio.';
+      await sendWhatsAppText(from, msg);
+      await saveSession([{ role: 'user', content: userText }, { role: 'assistant', content: msg }], emptyDraft());
+      return res.status(200).json({ ok: true, reset: true });
     }
 
+    const draftSummary = JSON.stringify({
+      clientId: draft.clientId, newClient: draft.newClient, projectType: draft.projectType,
+      projectScope: draft.projectScope, technicalNotes: draft.technicalNotes, items: draft.items
+    });
+    const systemText = `${SYSTEM_INSTRUCTION}\n\nBORRADOR ACTUAL (lo ya juntado de la cotizacion en curso; devuelvelo completo y actualizado):\n${draftSummary}\n\nClientes existentes en el CRM:\n${clientListText || 'Sin clientes registrados.'}`;
+
     let parsed: {
-      reply: string;
-      readyToFinalize: boolean;
+      reply?: string;
+      readyToFinalize?: boolean;
       queryIntent?: string | null;
       resendFolio?: string | null;
-      clientId: string | null;
-      newClient: { name: string; phone: string; company?: string } | null;
+      clientId?: string | null;
+      newClient?: { name: string; phone: string; company?: string } | null;
       projectType?: string;
       projectScope?: string;
       technicalNotes?: string;
-      items: Array<{ nombre: string; cantidad: number; precioUnitario: number }>;
+      items?: Array<{ nombre: string; cantidad: number; precioUnitario: number }>;
     };
 
     try {
-      parsed = JSON.parse(rawJsonText);
-    } catch (e) {
-      console.error('JSON invalido recibido de Groq:', rawJsonText);
-      await sendWhatsAppText(from, 'No entendi bien la solicitud, ¿me la puedes repetir?');
+      parsed = await callLLM(systemText, priorMessages.slice(-16), userText);
+    } catch (err: any) {
+      console.error('Error en LLM tras reintentos y fallback:', err);
+      const msg = 'Se me trabo un momento el cerebro. Tu mensaje quedo guardado: mandame un "listo" o repite lo ultimo y sigo desde donde ibamos.';
+      await sendWhatsAppText(from, msg);
+      await saveSession([{ role: 'user', content: userText }]);
       return res.status(200).json({ ok: true });
     }
+    parsed.reply = (parsed.reply || '').toString();
 
     // ---- Capacidad 3: reenviar el PDF de una cotizacion existente ----
     if (parsed.resendFolio && parsed.resendFolio.trim()) {
@@ -252,6 +311,7 @@ export default async function handler(req: any, res: any) {
         const notFoundReply = `No encontre la cotizacion con folio "${folio}". ¿Me confirmas el numero exacto?`;
         await sendWhatsAppText(from, notFoundReply);
         await sessionRef.set({
+          draft, draftUpdatedAt: Date.now(),
           messages: [...priorMessages, { role: 'user' as const, content: userText }, { role: 'assistant' as const, content: notFoundReply }].slice(-40),
           updatedAt: Date.now()
         });
@@ -287,6 +347,7 @@ export default async function handler(req: any, res: any) {
       await sendWhatsAppDocument(from, mediaId, filename, resendCaption);
 
       await sessionRef.set({
+          draft, draftUpdatedAt: Date.now(),
         messages: [...priorMessages, { role: 'user' as const, content: userText }, { role: 'assistant' as const, content: resendCaption }].slice(-40),
         updatedAt: Date.now()
       });
@@ -328,41 +389,70 @@ export default async function handler(req: any, res: any) {
         { role: 'user' as const, content: userText },
         { role: 'assistant' as const, content: queryReply }
       ].slice(-40);
-      await sessionRef.set({ messages: updatedMessagesQuery, updatedAt: Date.now() });
+      await sessionRef.set({
+          draft, draftUpdatedAt: Date.now(), messages: updatedMessagesQuery, updatedAt: Date.now() });
 
       return res.status(200).json({ ok: true, queried: true, matches: matches.length });
     }
 
-    // Actualizar historial
-    const updatedMessages: ChatMessage[] = [
-      ...priorMessages,
-      { role: 'user' as const, content: userText },
-      { role: 'assistant' as const, content: parsed.reply }
-    ].slice(-40);
-    await sessionRef.set({ messages: updatedMessages, updatedAt: Date.now() });
+    // ---- Capacidad 1: actualizar borrador y decidir (en codigo, no en el LLM) cuando generar ----
+    const validItems = (parsed.items || [])
+      .map(it => ({ nombre: String(it?.nombre || '').trim(), cantidad: Number(it?.cantidad) > 0 ? Number(it.cantidad) : 1, precioUnitario: Number(it?.precioUnitario) || 0 }))
+      .filter(it => it.nombre);
+    if (validItems.length > 0) draft.items = validItems;
+    if (parsed.clientId && clients.some(c => c.id === parsed.clientId)) { draft.clientId = parsed.clientId; draft.newClient = null; }
+    else if (parsed.newClient?.name && parsed.newClient.name.trim()) {
+      draft.newClient = { name: parsed.newClient.name.trim(), phone: (parsed.newClient.phone || '').trim(), company: (parsed.newClient.company || '').trim() };
+      draft.clientId = null;
+    }
+    if (parsed.projectType?.trim()) draft.projectType = parsed.projectType.trim();
+    if (parsed.projectScope?.trim()) draft.projectScope = parsed.projectScope.trim();
+    if (parsed.technicalNotes?.trim()) draft.technicalNotes = parsed.technicalNotes.trim();
 
-    if (!parsed.readyToFinalize) {
-      await sendWhatsAppText(from, parsed.reply);
+    const hasClient = !!(draft.clientId || draft.newClient?.name);
+    const missingPrice = draft.items.filter(it => !(it.precioUnitario > 0));
+    const hasItems = draft.items.length > 0 && missingPrice.length === 0;
+    const complete = hasClient && hasItems;
+
+    const wantsNow = /(?<![a-záéíóúñ])(gen[eé]ra(la|r|me)?|m[aá]nda(me|la|mela|melo|lo)?|env[ií]a(la|me)?|listo|hazla|ya est[aá]|as[ií]|en pdf|sin (alcance|notas)|no)(?![a-záéíóúñ])/i.test(userText) && userText.length < 80;
+    const extrasAskedBefore = draft.extrasAsked;
+    const hasBothExtras = !!(draft.projectScope && draft.technicalNotes);
+
+    const shouldGenerate = complete && (extrasAskedBefore || wantsNow || hasBothExtras);
+
+    if (!shouldGenerate) {
+      let reply = parsed.reply || '';
+      if (complete) {
+        // Cliente + productos listos y todavia no se pregunta por alcance/notas: pregunta unica y fija
+        const who = draft.newClient?.name || clients.find(c => c.id === draft.clientId)?.company || clients.find(c => c.id === draft.clientId)?.name || 'el cliente';
+        const falta = !draft.projectScope && !draft.technicalNotes ? 'el alcance del proyecto y/o notas tecnicas' : !draft.projectScope ? 'el alcance del proyecto' : 'notas tecnicas';
+        reply = `Ya tengo los productos de ${who}. ¿Quieres agregar ${falta}? Si no, respondeme "genérala" y te la mando asi.`;
+        draft.extrasAsked = true;
+      } else if (!reply.trim()) {
+        reply = !hasClient ? '¿A nombre de que cliente va la cotizacion?' : missingPrice.length ? `¿Cual es el precio unitario de "${missingPrice[0].nombre}"?` : '¿Que productos incluyo, con cantidad y precio?';
+      }
+      await sendWhatsAppText(from, reply);
+      await saveSession([{ role: 'user', content: userText }, { role: 'assistant', content: reply }]);
       return res.status(200).json({ ok: true });
     }
 
     // Resolucion de cliente y guardado de cotización
     let clientRecord: { id: string; name: string; company: string; phone: string; rfc?: string } | null = null;
 
-    if (parsed.clientId) {
-      const found = clients.find(c => c.id === parsed.clientId);
+    if (draft.clientId) {
+      const found = clients.find(c => c.id === draft.clientId);
       if (found) {
         clientRecord = { id: found.id, name: found.name || '', company: found.company || '', phone: found.phone || '', rfc: found.rfc || '' };
       }
     }
 
-    if (!clientRecord && parsed.newClient?.name) {
+    if (!clientRecord && draft.newClient?.name) {
       const newClientRef = db.collection('clients').doc();
       const newClientData = {
         id: newClientRef.id,
-        name: parsed.newClient.name,
-        company: parsed.newClient.company || parsed.newClient.name,
-        phone: parsed.newClient.phone || '',
+        name: draft.newClient.name,
+        company: draft.newClient.company || draft.newClient.name,
+        phone: draft.newClient.phone || '',
         email: '',
         rfc: '',
         contactRole: '',
@@ -382,7 +472,7 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ ok: true });
     }
 
-    const items = (parsed.items || []).filter(it => it.nombre && Number(it.precioUnitario) > 0);
+    const items = draft.items.filter(it => it.nombre && Number(it.precioUnitario) > 0);
     if (items.length === 0) {
       await sendWhatsAppText(from, 'Necesito al menos un producto con su precio para generar la cotizacion.');
       return res.status(200).json({ ok: true });
@@ -450,9 +540,9 @@ export default async function handler(req: any, res: any) {
       clientCompany: clientRecord.company,
       clientPhone: clientRecord.phone,
       clientRfc: clientRecord.rfc,
-      projectType: parsed.projectType || undefined,
-      projectScope: parsed.projectScope || undefined,
-      technicalNotes: parsed.technicalNotes || undefined,
+      projectType: draft.projectType || undefined,
+      projectScope: draft.projectScope || undefined,
+      technicalNotes: draft.technicalNotes || undefined,
       items: items.map(it => ({ ...it, categoria: 'Partida manual' })),
       subtotal,
       tax,
@@ -464,7 +554,16 @@ export default async function handler(req: any, res: any) {
 
     const filename = `${quoteNumber}.pdf`;
     const mediaId = await uploadWhatsAppMedia(pdfBuffer, filename);
-    await sendWhatsAppDocument(from, mediaId, filename, `${parsed.reply}\n\nFolio: ${quoteNumber} · Total: $${total.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`);
+    const docCaption = `Lista la cotizacion de ${clientRecord.company || clientRecord.name}.\n\nFolio: ${quoteNumber}\nSubtotal: $${subtotal.toLocaleString('es-MX', { minimumFractionDigits: 2 })}\nIVA: $${tax.toLocaleString('es-MX', { minimumFractionDigits: 2 })}\nTotal: $${total.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`;
+    await sendWhatsAppDocument(from, mediaId, filename, docCaption);
+
+    // Cotizacion lista: se limpia el borrador y el historial para que la siguiente empiece limpia
+    await sessionRef.set({
+      messages: [{ role: 'assistant' as const, content: `(Cotizacion ${quoteNumber} de ${clientRecord.company || clientRecord.name} generada y enviada. Ya no hay borrador abierto.)` }],
+      draft: emptyDraft(),
+      draftUpdatedAt: Date.now(),
+      updatedAt: Date.now()
+    });
 
     return res.status(200).json({ ok: true, quoteNumber });
 
