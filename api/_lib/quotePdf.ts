@@ -24,6 +24,7 @@ export type PdfQuoteData = {
   tax: number;
   total: number;
   includeTax: boolean;
+  conditions?: string[];
   validityDays?: number;
   exchangeRate?: number;
 };
@@ -65,6 +66,7 @@ const sanitizeQuote = (q: PdfQuoteData): PdfQuoteData => ({
   clientPhone: cleanText(q.clientPhone),
   clientRfc: cleanText(q.clientRfc),
   projectType: cleanText(q.projectType),
+  conditions: q.conditions ? q.conditions.map(cleanText) : q.conditions,
   projectScope: q.projectScope ? q.projectScope.split('\n').map(cleanText).filter(Boolean).join('\n') : q.projectScope,
   technicalNotes: q.technicalNotes ? q.technicalNotes.split('\n').map(cleanText).filter(Boolean).join('\n') : q.technicalNotes,
   items: q.items.map(it => ({
@@ -316,7 +318,7 @@ export const buildQuotePdfBuffer = (rawQuote: PdfQuoteData): Buffer => {
   const notesWidth = contentWidth * 0.58;
   const totalsWidth = contentWidth * 0.38;
   const totalsX = margin + contentWidth - totalsWidth;
-  const conditionLines = [
+  const conditionLines: string[] = (quote.conditions && quote.conditions.length) ? quote.conditions : [
     `- Precios en MXN ${quote.includeTax ? 'incluyen IVA' : 'mas IVA'} - Vigencia ${quote.validityDays || 15} dias naturales`,
     '- Tiempo de entrega: 5-10 dias habiles segun volumen del proyecto',
     '- Garantia de instalacion 12 meses - Equipos con garantia del fabricante',
