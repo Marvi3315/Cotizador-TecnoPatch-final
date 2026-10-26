@@ -9,6 +9,7 @@ export const config = { maxDuration: 60 };
 const groq = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: 'https://api.groq.com/openai/v1',
+  maxRetries: 0, // sin reintentos automaticos del SDK: el agente maneja el fallback y el limite de tiempo
 });
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -112,6 +113,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Metodo no permitido' });
   }
 
+  const startedAt = Date.now();
   try {
     const entry = req.body?.entry?.[0];
     const value = entry?.changes?.[0]?.value;
@@ -238,12 +240,17 @@ export default async function handler(req: any, res: any) {
       }
     };
 
+    // Guardar de inmediato el mensaje del vendedor: si algo se corta, el contexto no se pierde
+    await saveSession([{ role: 'user', content: userText.slice(0, 3000) }]);
+
     let reply: string;
     try {
-      reply = await runAgent(groq, ctx, priorMessages.slice(-20));
+      const history = priorMessages.slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 1500) }));
+      const deadline = startedAt + 50000; // Vercel corta a los 60 s
+      reply = await runAgent(groq, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
     } catch (err: any) {
       console.error('Error en el agente:', err);
-      reply = 'Se me trabo un momento el cerebro. Tu mensaje quedo guardado: mandame un "listo" o repite lo ultimo y sigo desde donde ibamos.';
+      reply = 'Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo desde donde ibamos.';
     }
 
     await sendWhatsAppText(from, reply);

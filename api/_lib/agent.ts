@@ -184,31 +184,31 @@ const partidaSchema = {
   type: 'object',
   properties: {
     nombre: { type: 'string' },
-    cantidad: { type: 'number', description: 'Si no la dicen, 1' },
-    precio_unitario: { type: 'number', description: 'Precio unitario SIN IVA en MXN' }
+    cantidad: { type: 'number' },
+    precio_unitario: { type: 'number', description: 'sin IVA, MXN' }
   },
   required: ['nombre', 'precio_unitario']
 };
 const ajusteSchema = {
   type: 'object',
-  description: 'Ajuste de precios. tipo "margen": sube (valor positivo) o baja (negativo) todos los precios ese porcentaje. tipo "subtotal_objetivo": reacomoda los precios para que el subtotal (sin IVA) quede EXACTO en valor.',
+  description: 'margen: % a subir (o bajar si es negativo) todos los precios. subtotal_objetivo: deja el subtotal SIN IVA exacto en valor.',
   properties: { tipo: { type: 'string', enum: ['margen', 'subtotal_objetivo'] }, valor: { type: 'number' } },
   required: ['tipo', 'valor']
 };
 
 export const TOOLS: any[] = [
-  { type: 'function', function: { name: 'buscar_clientes', description: 'Busca clientes en el CRM por nombre o empresa (tolera errores de dedo). Usala SIEMPRE antes de tratar a alguien como cliente nuevo.', parameters: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } } },
-  { type: 'function', function: { name: 'buscar_cotizaciones', description: 'Lista cotizaciones existentes (mas recientes primero) filtrando por texto (cliente o folio), estatus y/o dias hacia atras.', parameters: { type: 'object', properties: { texto: { type: 'string' }, estatus: { type: 'string', enum: STATUSES }, dias: { type: 'number' }, limite: { type: 'number' } } } } },
-  { type: 'function', function: { name: 'ver_cotizacion', description: 'Devuelve el detalle completo de una cotizacion (partidas numeradas, totales, alcance, notas, estatus).', parameters: { type: 'object', properties: { folio: { type: 'string' } }, required: ['folio'] } } },
-  { type: 'function', function: { name: 'actualizar_borrador', description: 'Guarda/actualiza el BORRADOR de una cotizacion NUEVA. Llamala cada vez que el vendedor de datos del cliente, partidas, alcance o notas. "partidas" REEMPLAZA la lista completa (manda todas, las anteriores mas las nuevas o corregidas). Los campos que omitas se conservan. limpiar=true descarta el borrador.', parameters: { type: 'object', properties: { cliente_id: { type: 'string', description: 'id de un cliente existente (de buscar_clientes)' }, cliente_nuevo: { type: 'object', properties: { nombre: { type: 'string' }, telefono: { type: 'string' }, empresa: { type: 'string' } }, required: ['nombre'] }, tipo_proyecto: { type: 'string' }, alcance: { type: 'string', description: 'Redactado en espanol profesional' }, notas_tecnicas: { type: 'string' }, condiciones: { type: 'array', items: { type: 'string' }, description: 'Condiciones comerciales personalizadas (cada una una linea). Solo si el vendedor las pide; si no, se usan las estandar.' }, partidas: { type: 'array', items: partidaSchema }, limpiar: { type: 'boolean' } } } } },
-  { type: 'function', function: { name: 'crear_cotizacion', description: 'Genera el PDF de la cotizacion NUEVA con lo que hay en el borrador y lo envia por WhatsApp. Opcionalmente aplica un ajuste de precios (margen o subtotal objetivo). Si aun no se pregunta por alcance/notas, la herramienta te lo indicara.', parameters: { type: 'object', properties: { ajuste: ajusteSchema } } } },
-  { type: 'function', function: { name: 'duplicar_cotizacion', description: 'Crea una cotizacion NUEVA copiando las partidas de una existente, para otro cliente (o el mismo), con ajuste de precios opcional. Genera folio nuevo y envia el PDF.', parameters: { type: 'object', properties: { folio: { type: 'string' }, cliente_id: { type: 'string' }, cliente_nuevo: { type: 'object', properties: { nombre: { type: 'string' }, telefono: { type: 'string' }, empresa: { type: 'string' } }, required: ['nombre'] }, ajuste: ajusteSchema, alcance: { type: 'string' }, notas_tecnicas: { type: 'string' } }, required: ['folio'] } } },
-  { type: 'function', function: { name: 'editar_cotizacion', description: 'Modifica una cotizacion EXISTENTE: cambiar precio/cantidad/nombre de partidas (por numero, empezando en 1), agregar o quitar partidas, cambiar alcance/notas, o aplicar un ajuste de precios (margen o subtotal objetivo). NO aplica el cambio: devuelve un resumen "antes/despues" y espera que el vendedor confirme con "si" (entonces usa confirmar_accion).', parameters: { type: 'object', properties: { folio: { type: 'string' }, actualizar: { type: 'array', items: { type: 'object', properties: { partida: { type: 'number' }, nombre: { type: 'string' }, cantidad: { type: 'number' }, precio_unitario: { type: 'number' } }, required: ['partida'] } }, agregar: { type: 'array', items: partidaSchema }, quitar: { type: 'array', items: { type: 'number' }, description: 'Numeros de partida a quitar' }, alcance: { type: 'string' }, notas_tecnicas: { type: 'string' }, ajuste: ajusteSchema, enviar_pdf: { type: 'boolean', description: 'Mandar el PDF actualizado al aplicar (default true)' } }, required: ['folio'] } } },
-  { type: 'function', function: { name: 'cambiar_estatus', description: 'Cambia el estatus de una cotizacion (Borrador, Enviada, Seguimiento, Aceptada, Rechazada). Pide confirmacion al vendedor antes de aplicar.', parameters: { type: 'object', properties: { folio: { type: 'string' }, estatus: { type: 'string', enum: STATUSES }, motivo: { type: 'string', description: 'Motivo si es Rechazada' } }, required: ['folio', 'estatus'] } } },
-  { type: 'function', function: { name: 'confirmar_accion', description: 'Aplica la accion pendiente (editar_cotizacion o cambiar_estatus) SOLO cuando el vendedor acaba de contestar que si/confirma en su mensaje mas reciente.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'cancelar_accion', description: 'Descarta la accion pendiente cuando el vendedor dice que no o que mejor no.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'enviar_pdf', description: 'Reenvia por WhatsApp el PDF de una cotizacion existente.', parameters: { type: 'object', properties: { folio: { type: 'string' } }, required: ['folio'] } } },
-  { type: 'function', function: { name: 'resumen_ventas', description: 'Resumen de cotizaciones de los ultimos N dias (default 7): cantidad y monto por estatus, por vendedor, y cotizaciones estancadas sin cerrar (mas de 5 dias en Borrador/Enviada/Seguimiento).', parameters: { type: 'object', properties: { dias: { type: 'number' } } } } }
+  { type: 'function', function: { name: 'buscar_clientes', description: 'Busca clientes por nombre/empresa (tolera errores). Usala antes de tratar a alguien como cliente nuevo.', parameters: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } } },
+  { type: 'function', function: { name: 'buscar_cotizaciones', description: 'Lista cotizaciones (recientes primero) filtrando por texto (cliente/folio), estatus y/o dias.', parameters: { type: 'object', properties: { texto: { type: 'string' }, estatus: { type: 'string', enum: STATUSES }, dias: { type: 'number' }, limite: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'ver_cotizacion', description: 'Detalle de una cotizacion: partidas numeradas, totales, alcance, notas, estatus.', parameters: { type: 'object', properties: { folio: { type: 'string' } }, required: ['folio'] } } },
+  { type: 'function', function: { name: 'actualizar_borrador', description: 'Guarda el BORRADOR de una cotizacion NUEVA. Llamala cada vez que den cliente, partidas, alcance o notas. "partidas" REEMPLAZA la lista completa. Lo omitido se conserva. limpiar=true lo descarta.', parameters: { type: 'object', properties: { cliente_id: { type: 'string' }, cliente_nuevo: { type: 'object', properties: { nombre: { type: 'string' }, telefono: { type: 'string' }, empresa: { type: 'string' } }, required: ['nombre'] }, tipo_proyecto: { type: 'string' }, alcance: { type: 'string' }, notas_tecnicas: { type: 'string' }, condiciones: { type: 'array', items: { type: 'string' } }, partidas: { type: 'array', items: partidaSchema }, limpiar: { type: 'boolean' } } } } },
+  { type: 'function', function: { name: 'crear_cotizacion', description: 'Genera y envia el PDF de la cotizacion NUEVA con el borrador. Opcional: ajuste de precios.', parameters: { type: 'object', properties: { ajuste: ajusteSchema } } } },
+  { type: 'function', function: { name: 'duplicar_cotizacion', description: 'Crea cotizacion NUEVA copiando las partidas de otra, para otro cliente, con ajuste opcional. Envia el PDF.', parameters: { type: 'object', properties: { folio: { type: 'string' }, cliente_id: { type: 'string' }, cliente_nuevo: { type: 'object', properties: { nombre: { type: 'string' }, telefono: { type: 'string' }, empresa: { type: 'string' } }, required: ['nombre'] }, ajuste: ajusteSchema, alcance: { type: 'string' }, notas_tecnicas: { type: 'string' } }, required: ['folio'] } } },
+  { type: 'function', function: { name: 'editar_cotizacion', description: 'Modifica una cotizacion EXISTENTE (partidas por numero desde 1, agregar/quitar, alcance, notas o ajuste). NO aplica: devuelve antes/despues y espera "si" del vendedor (luego confirmar_accion).', parameters: { type: 'object', properties: { folio: { type: 'string' }, actualizar: { type: 'array', items: { type: 'object', properties: { partida: { type: 'number' }, nombre: { type: 'string' }, cantidad: { type: 'number' }, precio_unitario: { type: 'number' } }, required: ['partida'] } }, agregar: { type: 'array', items: partidaSchema }, quitar: { type: 'array', items: { type: 'number' } }, alcance: { type: 'string' }, notas_tecnicas: { type: 'string' }, ajuste: ajusteSchema, enviar_pdf: { type: 'boolean' } }, required: ['folio'] } } },
+  { type: 'function', function: { name: 'cambiar_estatus', description: 'Cambia estatus de una cotizacion (Borrador, Enviada, Seguimiento, Aceptada, Rechazada). Pide confirmacion.', parameters: { type: 'object', properties: { folio: { type: 'string' }, estatus: { type: 'string', enum: STATUSES }, motivo: { type: 'string' } }, required: ['folio', 'estatus'] } } },
+  { type: 'function', function: { name: 'confirmar_accion', description: 'Aplica la accion pendiente SOLO si el ultimo mensaje del vendedor dice que si.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'cancelar_accion', description: 'Descarta la accion pendiente si el vendedor dice que no.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'enviar_pdf', description: 'Reenvia el PDF de una cotizacion existente.', parameters: { type: 'object', properties: { folio: { type: 'string' } }, required: ['folio'] } } },
+  { type: 'function', function: { name: 'resumen_ventas', description: 'Resumen de los ultimos N dias (default 7): por estatus, por vendedor y cotizaciones estancadas (>5 dias sin cerrar).', parameters: { type: 'object', properties: { dias: { type: 'number' } } } } }
 ];
 
 type Mutation = { error: string } | { preview: any; commit: () => Promise<any> };
@@ -449,68 +449,62 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
 // ---------------------------------------------------------------------
 export const buildSystemPrompt = (state: AgentState, senderName: string) => {
   const hoy = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'full', timeStyle: 'short' });
-  return `Eres Nova, la asistente inteligente de TecnoPatch (telecomunicaciones, CCTV, cableado estructurado, redes, VoIP, control de acceso; Guadalajara, Mexico). Hablas por WhatsApp con ${senderName}, del equipo de TecnoPatch. Tono natural, cercano y directo, espanol de Mexico, mensajes cortos (es WhatsApp: sin tablas ni markdown pesado; puedes usar listas simples con guion). Hoy es ${hoy}.
+  return `Eres Nova, asistente de TecnoPatch (telecomunicaciones, CCTV, cableado, redes, VoIP, control de acceso; Guadalajara). Hablas por WhatsApp con ${senderName}, del equipo. Tono cercano y directo, espanol de Mexico, mensajes MUY cortos (sin tablas ni markdown pesado). Hoy es ${hoy}.
 
-Entiendes conversaciones normales aunque sean desordenadas, con errores de dedo, audios transcritos o listas pegadas, y las EJECUTAS usando tus herramientas, encadenando las que hagan falta en el mismo turno. Nunca inventes folios, precios, clientes ni totales: todo dato de cotizaciones sale de las herramientas. Si la herramienta responde con error, explicaselo al vendedor con claridad y di que falta.
+Entiendes mensajes desordenados, audios y listas pegadas, y los EJECUTAS con tus herramientas, encadenandolas en el mismo turno. Nunca inventes folios, precios, clientes ni totales: salen de las herramientas. Si una herramienta da error, explicalo claro.
 
 COTIZACION NUEVA
-1. Cliente: llama buscar_clientes antes de tratar a alguien como nuevo. Si coincide, usa su id. Si no, basta el nombre (telefono opcional: no lo exijas ni lo repitas).
-2. Cada vez que te den datos, llama actualizar_borrador con TODO lo acumulado (partidas completas). Precios SIN IVA (el sistema suma 16%). Si dan precio total de una partida y cantidad, divide para el unitario. Cantidad por default 1. Si falta el precio de algo, pregunta solo eso.
-3. Redacta el alcance y las notas tecnicas en espanol profesional si el vendedor los da (corrige ortografia sin cambiar datos).
-4. Cuando haya cliente y partidas con precio, llama crear_cotizacion. Si responde falta_preguntar, haz esa pregunta (una sola vez) y cuando conteste llama de nuevo crear_cotizacion. Si piden dejar la cotizacion en un subtotal exacto o subir un margen, pasalo en "ajuste" (subtotal_objetivo = subtotal SIN IVA; margen = porcentaje).
-5. Despues de que el PDF se envie, cierra con una linea corta.
+- Si piden una cotizacion sin dar datos, pregunta SOLO esto, en 2 lineas: cliente y partidas (producto, cantidad, precio sin IVA). Nada de listas largas de preguntas.
+- Cliente: buscar_clientes antes de tratarlo como nuevo (basta el nombre; telefono opcional, no lo exijas).
+- Cada vez que den datos, llama actualizar_borrador con TODO lo acumulado. Precios SIN IVA (el sistema suma 16%). Cantidad default 1. Si dan precio total de una partida, divide. Si falta un precio, pregunta solo eso.
+- Si dan alcance o notas tecnicas, guardalos redactados en espanol profesional (sin cambiar datos). Un texto largo de "notas" o "en notas:" va en notas_tecnicas completo.
+- Con cliente y partidas con precio, llama crear_cotizacion. Si responde falta_preguntar, haz esa pregunta UNA vez y al contestar vuelve a llamarla. Para dejar un subtotal exacto o subir margen usa "ajuste". Tras enviar el PDF, cierra con una linea.
 
-COTIZACIONES EXISTENTES
-- Consultar: buscar_cotizaciones / ver_cotizacion. "La ultima de Kelly" = buscar_cotizaciones con texto "Kelly" y tomar la primera.
-- Modificar (precios, cantidades, quitar/agregar partidas, alcance, ajuste de margen o subtotal): editar_cotizacion. Esa herramienta NO aplica nada: te da un antes/despues; muestraselo corto y pide "si". Cuando el vendedor conteste que si, llama confirmar_accion. Si dice que no, cancelar_accion.
-- Cambiar estatus (Borrador, Enviada, Seguimiento, Aceptada, Rechazada): cambiar_estatus y confirmar igual.
-- Copiar para otro cliente: duplicar_cotizacion (puedes ajustar precios ahi mismo).
-- Reenviar PDF: enviar_pdf. Resumenes y seguimiento ("cuanto cotizamos esta semana", "que se quedo sin cerrar"): resumen_ventas.
-- Si dice "esa", "la primera", "la anterior", saca el folio de lo que se acaba de hablar; si hay duda, pregunta cual.
+EXISTENTES
+- Consultar: buscar_cotizaciones / ver_cotizacion ("la ultima de Kelly" = buscar con "Kelly", primera).
+- Modificar (precios, cantidades, partidas, alcance, ajuste): editar_cotizacion NO aplica; muestra el antes/despues corto y pide "si"; con el si, confirmar_accion; con no, cancelar_accion.
+- Estatus: cambiar_estatus (con confirmacion). Copiar a otro cliente: duplicar_cotizacion. Reenviar PDF: enviar_pdf. Resumenes/seguimiento: resumen_ventas.
+- "esa/la primera": saca el folio de lo hablado; si hay duda, pregunta.
 
-IMAGENES Y PDFS: llegan transcritos como texto entre corchetes. Si es una cotizacion de otro proveedor o una lista de productos, extrae partidas (nombre, cantidad, precio) y arma el borrador; no copies datos de metros cuadrados a menos que los pidan. Si los precios del documento ya traen IVA, pregunta si los quiere asi o sin IVA.
+IMAGENES/PDFS llegan como texto entre corchetes: extrae partidas y arma el borrador. No copies m2 salvo que lo pidan. Si los precios ya traen IVA, pregunta.
+OTRAS PREGUNTAS (equipos, redes, ventas o cualquier tema): responde util y breve, sin herramientas de cotizaciones ni mostrar historial.
 
-PREGUNTAS GENERALES (equipos, instalacion, redes, ventas, o cualquier otra cosa que te pregunten, aunque no tenga que ver con cotizar): contesta de forma util, amable y breve, sin tocar ninguna cotizacion y SIN llamar herramientas de cotizaciones (nunca muestres el historial de cotizaciones si no lo pidieron). Si piden algo que no puedes hacer (por ejemplo borrar cotizaciones), dilo y ofrece lo mas cercano.
-
-BORRADOR ACTUAL (cotizacion nueva en curso): ${JSON.stringify(state.draft)}
-${state.extrasAsked ? 'Ya se pregunto por alcance/notas en esta cotizacion: no lo vuelvas a preguntar.' : ''}
-${state.pending ? `ACCION PENDIENTE DE CONFIRMACION: ${state.pending.tool} ${JSON.stringify(state.pending.args)}. Si el mensaje del vendedor es un si, llama confirmar_accion; si es un no, cancelar_accion; si pide otra cosa, atiendela.` : ''}`;
+BORRADOR ACTUAL: ${JSON.stringify(state.draft)}
+${state.extrasAsked ? 'Ya se pregunto por alcance/notas: no lo repitas.' : ''}
+${state.pending ? `PENDIENTE DE CONFIRMAR: ${state.pending.tool} ${JSON.stringify(state.pending.args)}. Si el vendedor dice si: confirmar_accion; si no: cancelar_accion; si pide otra cosa, atiendela.` : ''}`;
 };
 
 // ---------------------------------------------------------------------
-// Loop del agente con fallback de modelos
+// Loop del agente con fallback de modelos, limite de tiempo y sin esperas largas
 // ---------------------------------------------------------------------
 type Msg = { role: 'user' | 'assistant'; content: string };
 const MODEL_CHAIN: Array<{ model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
-  { model: 'openai/gpt-oss-120b', reasoning: 'medium' },
-  { model: 'openai/gpt-oss-20b', reasoning: 'medium' },
-  { model: 'llama-3.3-70b-versatile' }
+  { model: 'openai/gpt-oss-120b', reasoning: 'low' },
+  { model: 'llama-3.3-70b-versatile' },
+  { model: 'openai/gpt-oss-20b', reasoning: 'low' }
 ];
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-const chatWithFallback = async (client: any, messages: any[], startAt: number) => {
+// Prueba cada modelo UNA vez (si hay limite de tokens o falla, pasa de inmediato al siguiente).
+const chatWithFallback = async (client: any, messages: any[], startAt: number, deadline: number) => {
   let lastError: any = null;
   for (let m = startAt; m < MODEL_CHAIN.length; m++) {
+    const remaining = deadline - Date.now();
+    if (remaining < 4000) break;
     const { model, reasoning } = MODEL_CHAIN[m];
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const params: any = { model, messages, tools: TOOLS, tool_choice: 'auto', temperature: 0.2 };
-        if (reasoning) params.reasoning_effort = reasoning;
-        const res = await client.chat.completions.create(params);
-        return { res, modelIndex: m };
-      } catch (err: any) {
-        lastError = err;
-        console.error(`LLM fallo (${model}, intento ${attempt + 1}) status=${err?.status}:`, err?.message || err);
-        if (err?.status === 404) break;
-        if (err?.status === 429) { await sleep(1200); if (attempt === 0) continue; break; }
-        await sleep(500);
-      }
+    try {
+      const params: any = { model, messages, tools: TOOLS, tool_choice: 'auto', temperature: 0.2 };
+      if (reasoning) params.reasoning_effort = reasoning;
+      const res = await client.chat.completions.create(params, { timeout: Math.min(22000, remaining - 2000), maxRetries: 0 });
+      return { res, modelIndex: m };
+    } catch (err: any) {
+      lastError = err;
+      console.error(`LLM fallo (${model}) status=${err?.status}:`, String(err?.message || err).slice(0, 300));
     }
   }
-  throw lastError || new Error('LLM sin respuesta');
+  throw lastError || new Error('LLM sin respuesta a tiempo');
 };
 
-export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[]): Promise<string> => {
+export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[], deadline: number, persist?: () => Promise<void>): Promise<string> => {
   const messages: any[] = [
     { role: 'system', content: buildSystemPrompt(ctx.state, ctx.senderName) },
     ...history.map(m => ({ role: m.role, content: m.content })),
@@ -522,7 +516,10 @@ export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[]): Prom
   ctx.sendPdf = async (b, f, c) => { sentPdfFlag = true; await origSend(b, f, c); };
 
   for (let step = 0; step < 7; step++) {
-    const { res, modelIndex: used } = await chatWithFallback(client, messages, modelIndex);
+    if (deadline - Date.now() < 5000) {
+      return sentPdfFlag ? 'Listo, ahi te lo mande.' : 'Me estoy tardando de mas con eso. Lo que ya me diste quedo guardado: mandame un "listo" y sigo.';
+    }
+    const { res, modelIndex: used } = await chatWithFallback(client, messages, modelIndex, deadline);
     modelIndex = used;
     const msg = res.choices?.[0]?.message;
     const calls = msg?.tool_calls || [];
@@ -537,7 +534,8 @@ export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[]): Prom
       try { args = call.function?.arguments ? JSON.parse(call.function.arguments) : {}; } catch { args = {}; }
       const result = await executeTool(ctx, call.function?.name, args);
       console.log(`tool ${call.function?.name}:`, JSON.stringify(args).slice(0, 300), '->', JSON.stringify(result).slice(0, 300));
-      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 6000) });
+      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 4000) });
+      if (persist) { try { await persist(); } catch (e) { console.error('persist fallo:', e); } }
     }
   }
   return sentPdfFlag ? 'Listo, ahi te lo mande.' : 'Me enrede un poco con esa peticion; ¿me la repites mas cortita?';
