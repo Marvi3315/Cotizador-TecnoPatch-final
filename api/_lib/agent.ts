@@ -240,12 +240,17 @@ const planEdit = async (ctx: AgentCtx, a: any): Promise<Mutation> => {
   if (a.alcance) notas.push('alcance actualizado');
   if (a.notas_tecnicas) notas.push('notas tecnicas actualizadas');
 
-  const preview = {
-    folio: q.data.quoteNumber, cliente: q.data.clientCompany || q.data.clientName,
-    antes: { ...oldT },
-    despues: { ...newT },
-    partidas_despues: items.map((i, k) => `${k + 1}. ${i.cantidad}x ${i.nombre} @ ${money(i.precioUnitario)}`),
-    otros_cambios: notas
+  const snippet = (t: any, n = 220) => { const x = String(t || '').trim(); return x.length > n ? `${x.slice(0, n)}...` : x; };
+  const itemsChanged = JSON.stringify(before) !== JSON.stringify(items);
+  const sameTotals = oldT.subtotal === newT.subtotal && oldT.total === newT.total;
+  const cambios: string[] = [];
+  if (itemsChanged) cambios.push('Partidas modificadas');
+  if (a.alcance) cambios.push(`Alcance nuevo: "${snippet(a.alcance)}"${q.data.projectScope ? ' (reemplaza el anterior)' : ''}`);
+  if (a.notas_tecnicas) cambios.push(`Nota tecnica nueva: "${snippet(a.notas_tecnicas)}"${q.data.technicalNotes ? ' (reemplaza la anterior)' : ''}`);
+  const preview: any = {
+    folio: q.data.quoteNumber, cliente: q.data.clientCompany || q.data.clientName, cambios,
+    ...(sameTotals ? { totales_sin_cambio: true, total_actual: oldT.total } : { antes: oldT, despues: newT }),
+    ...(itemsChanged ? { partidas_despues: items.map((i, k) => `${k + 1}. ${i.cantidad}x ${i.nombre} @ ${money(i.precioUnitario)}`) } : {})
   };
 
   return {
@@ -296,7 +301,7 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
       const plan = await MUTATORS[name](ctx, a);
       if ('error' in plan) return plan;
       state.pending = { tool: name, args: a, msgId: ctx.messageId, at: Date.now() };
-      return { requiere_confirmacion: true, resumen: plan.preview, instruccion: 'Muestrale al vendedor este antes/despues de forma clara y corta y pidele que conteste "si" para aplicarlo. NO llames confirmar_accion en este mismo turno.' };
+      return { requiere_confirmacion: true, resumen: plan.preview, instruccion: 'Muestrale al vendedor SOLO lo que cambia, corto y claro (si totales_sin_cambio, no repitas los totales) y pidele que conteste "si" para aplicarlo. Sin negritas ni asteriscos. NO llames confirmar_accion en este mismo turno.' };
     }
     if (name === 'confirmar_accion') {
       const p = state.pending;
