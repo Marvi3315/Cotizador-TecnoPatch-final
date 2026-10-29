@@ -1,6 +1,6 @@
 import { getAdminDb } from './_lib/firebaseAdmin.js';
 import { sendWhatsAppText, uploadWhatsAppMedia, sendWhatsAppDocument, downloadWhatsAppMedia } from './_lib/whatsapp.js';
-import { runAgent, emptyState, emptyDraft, type AgentState } from './_lib/agent.js';
+import { runAgent, tryFastPath, emptyState, emptyDraft, type AgentState } from './_lib/agent.js';
 import OpenAI, { toFile } from 'openai';
 
 export const config = { maxDuration: 60 };
@@ -245,12 +245,18 @@ export default async function handler(req: any, res: any) {
 
     let reply: string;
     try {
-      const history = priorMessages.slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 1500) }));
-      const deadline = startedAt + 50000; // Vercel corta a los 60 s
-      reply = await runAgent(groq, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
+      const fast = await tryFastPath(ctx);
+      if (fast) {
+        reply = fast;
+      } else {
+        const history = priorMessages.slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 1500) }));
+        const deadline = startedAt + 50000; // Vercel corta a los 60 s
+        reply = await runAgent(groq, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
+      }
     } catch (err: any) {
       console.error('Error en el agente:', err);
-      reply = 'Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo desde donde ibamos.';
+      try { await db.collection('whatsappErrors').add({ at: Date.now(), from, userText: userText.slice(0, 300), error: String(err?.message || err).slice(0, 800) }); } catch { /* ignorar */ }
+      reply = `Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo.\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 220)})`;
     }
 
     await sendWhatsAppText(from, reply);

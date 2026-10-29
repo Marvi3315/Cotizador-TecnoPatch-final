@@ -491,10 +491,10 @@ const MODEL_CHAIN: Array<{ model: string; reasoning?: 'low' | 'medium' | 'high' 
 
 // Prueba cada modelo UNA vez (si hay limite de tokens o falla, pasa de inmediato al siguiente).
 const chatWithFallback = async (client: any, messages: any[], startAt: number, deadline: number) => {
-  let lastError: any = null;
+  const errors: string[] = [];
   for (let m = startAt; m < MODEL_CHAIN.length; m++) {
     const remaining = deadline - Date.now();
-    if (remaining < 4000) break;
+    if (remaining < 4000) { errors.push('sin tiempo'); break; }
     const { model, reasoning } = MODEL_CHAIN[m];
     try {
       const params: any = { model, messages, tools: TOOLS, tool_choice: 'auto', temperature: 0.2 };
@@ -502,11 +502,42 @@ const chatWithFallback = async (client: any, messages: any[], startAt: number, d
       const res = await client.chat.completions.create(params, { timeout: Math.min(22000, remaining - 2000), maxRetries: 0 });
       return { res, modelIndex: m };
     } catch (err: any) {
-      lastError = err;
-      console.error(`LLM fallo (${model}) status=${err?.status}:`, String(err?.message || err).slice(0, 300));
+      const detail = String(err?.error?.error?.message || err?.message || err).replace(/\s+/g, ' ').slice(0, 160);
+      console.error(`LLM fallo (${model}) status=${err?.status}:`, detail);
+      errors.push(`${model.split('/').pop()}: ${err?.status || 'sin respuesta'} ${detail}`);
     }
   }
-  throw lastError || new Error('LLM sin respuesta a tiempo');
+  throw new Error(errors.join(' | ') || 'LLM sin respuesta a tiempo');
+};
+
+// Atajos SIN LLM para los pasos mas comunes: responder "si/no" a una confirmacion pendiente y
+// contestar la pregunta de alcance/notas con un "no / genérala / listo". Asi no dependen del modelo.
+export const tryFastPath = async (ctx: AgentCtx): Promise<string | null> => {
+  const text = ctx.userText.trim();
+  if (text.length > 60 || text.startsWith('[')) return null;
+  const { state } = ctx;
+
+  if (state.pending && Date.now() - state.pending.at < 30 * 60 * 1000 && state.pending.msgId !== ctx.messageId) {
+    if (YES.test(text)) {
+      const r: any = await executeTool(ctx, 'confirmar_accion', {});
+      if (r?.aplicado) return r.pdf_enviado ? `Listo, apliqué el cambio a ${r.folio} y te mandé el PDF actualizado.` : `Listo, apliqué el cambio a ${r.folio}.`;
+      return `No pude aplicar el cambio: ${r?.error || 'error desconocido'}`;
+    }
+    if (/^\s*(no|nel|cancela(r)?|mejor no|d[eé]jalo)(?![a-záéíóúñ])/i.test(text)) {
+      await executeTool(ctx, 'cancelar_accion', {});
+      return 'Listo, no hice ningún cambio.';
+    }
+    return null;
+  }
+
+  const d = state.draft;
+  const complete = !!(d.clientId || d.newClient?.name) && d.items.length > 0 && d.items.every(i => i.precioUnitario > 0);
+  if (state.extrasAsked && complete && WANTS_NOW.test(text)) {
+    const r: any = await executeTool(ctx, 'crear_cotizacion', {});
+    if (r?.creada) return `Listo, ahí tienes la cotización ${r.folio} de ${r.cliente}.`;
+    if (r?.error) return `No pude generarla: ${r.error}`;
+  }
+  return null;
 };
 
 export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[], deadline: number, persist?: () => Promise<void>): Promise<string> => {
