@@ -211,6 +211,19 @@ const ajusteSchema = {
   required: ['tipo', 'valor']
 };
 
+const CITA_TIPOS = ['Visita tecnica', 'Seguimiento', 'Cierre', 'Instalacion', 'Otro'];
+const CITA_ESTATUS = ['Programada', 'Realizada', 'Reagendada', 'Cancelada'];
+const TZ = 'America/Mexico_City';
+const todayMx = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+const nowHmMx = () => new Date().toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+const addDaysIso = (iso: string, n: number) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+const diaDe = (iso: string) => DIAS[new Date(`${iso}T12:00:00Z`).getUTCDay()];
+const validDate = (v: any) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) && !Number.isNaN(Date.parse(`${v}T12:00:00Z`));
+const normHora = (v: any) => { const m = String(v || '').trim().match(/^(\d{1,2}):(\d{2})$/); if (!m || +m[1] > 23 || +m[2] > 59) return null; return `${m[1].padStart(2, '0')}:${m[2]}`; };
+const minutes = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const ACTIVE_CITA = ['Programada', 'Reagendada'];
+
 export const TOOLS: any[] = [
   { type: 'function', function: { name: 'buscar_clientes', description: 'Busca clientes por nombre/empresa (tolera errores). Usala antes de tratar a alguien como cliente nuevo.', parameters: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } } },
   { type: 'function', function: { name: 'buscar_cotizaciones', description: 'Lista cotizaciones (recientes primero) filtrando por texto (cliente/folio), estatus y/o dias.', parameters: { type: 'object', properties: { texto: { type: 'string' }, estatus: { type: 'string', enum: STATUSES }, dias: { type: 'number' }, limite: { type: 'number' } } } } },
@@ -223,16 +236,23 @@ export const TOOLS: any[] = [
   { type: 'function', function: { name: 'confirmar_accion', description: 'Aplica la accion pendiente SOLO si el ultimo mensaje del vendedor dice que si.' } },
   { type: 'function', function: { name: 'cancelar_accion', description: 'Descarta la accion pendiente si el vendedor dice que no.' } },
   { type: 'function', function: { name: 'enviar_pdf', description: 'Reenvia el PDF de una cotizacion existente.', parameters: { type: 'object', properties: { folio: { type: 'string' } }, required: ['folio'] } } },
-  { type: 'function', function: { name: 'resumen_ventas', description: 'Resumen de los ultimos N dias (default 7): por estatus, por vendedor y cotizaciones estancadas (>5 dias sin cerrar).', parameters: { type: 'object', properties: { dias: { type: 'number' } } } } }
+  { type: 'function', function: { name: 'resumen_ventas', description: 'Resumen de los ultimos N dias (default 7): por estatus, por vendedor y cotizaciones estancadas (>5 dias sin cerrar).', parameters: { type: 'object', properties: { dias: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'ver_agenda', description: 'Consulta las citas/visitas de la agenda del CRM. Por defecto hoy y los proximos 7 dias. Fechas YYYY-MM-DD.', parameters: { type: 'object', properties: { desde: { type: 'string' }, hasta: { type: 'string' }, texto: { type: 'string', description: 'filtra por cliente/titulo' }, solo_mias: { type: 'boolean' }, incluir_canceladas: { type: 'boolean' } } } } },
+  { type: 'function', function: { name: 'agendar_cita', description: 'Agenda una cita/visita en el CRM. Convierte fechas relativas (manana, el jueves) a YYYY-MM-DD y la hora a HH:MM de 24h. Si hay choque de horario avisa y no agenda salvo forzar=true.', parameters: { type: 'object', properties: { cliente: { type: 'string', description: 'nombre del cliente o empresa' }, cliente_id: { type: 'string' }, telefono: { type: 'string', description: 'solo si es cliente nuevo' }, fecha: { type: 'string' }, hora: { type: 'string' }, tipo: { type: 'string', enum: CITA_TIPOS }, titulo: { type: 'string' }, lugar: { type: 'string' }, notas: { type: 'string' }, forzar: { type: 'boolean' } }, required: ['cliente', 'fecha', 'hora'] } } },
+  { type: 'function', function: { name: 'modificar_cita', description: 'Reagenda, cancela o marca como realizada una cita EXISTENTE (o cambia lugar/notas/tipo). NO aplica: pide "si" al vendedor (luego confirmar_accion). Identificala con cliente (+ fecha_actual si hay varias) o cita_id.', parameters: { type: 'object', properties: { cita_id: { type: 'string' }, cliente: { type: 'string' }, fecha_actual: { type: 'string' }, fecha: { type: 'string' }, hora: { type: 'string' }, estatus: { type: 'string', enum: CITA_ESTATUS }, tipo: { type: 'string', enum: CITA_TIPOS }, lugar: { type: 'string' }, notas: { type: 'string' }, titulo: { type: 'string' } } } } }
 ];
 
 
+const AGENDA_TOOLS = ['ver_agenda', 'agendar_cita', 'modificar_cita', 'buscar_clientes', 'confirmar_accion', 'cancelar_accion'];
+const AGENDA_RE = /\bcitas?\b|agend|reagend|reunion|junta|visita|calendario|que tengo|manana|pasado manana|esta semana|proxima semana|lunes|martes|miercoles|jueves|viernes|sabado|domingo|a las \d|recuerdame/;
 const CORE_TOOLS = ['actualizar_borrador', 'crear_cotizacion', 'buscar_clientes'];
 const EXISTING_RE = /cot-\d|folio|historial|ultim|anterior|cambia|modifica|edita|duplic|copia|estatus|aceptad|rechazad|seguimiento|resumen|cuanto|cuantas|reenv|manda(me)? (la|el|esa|ese)|pdf|esa cotizacion|la de /i;
 // Solo se mandan al modelo las herramientas que la peticion probablemente necesita
 export const selectTools = (userText: string, state: AgentState): any[] => {
   const t = userText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  if (state.pending || EXISTING_RE.test(t)) return TOOLS;
+  if (state.pending) return TOOLS;
+  if (AGENDA_RE.test(t) && !/cot-\d|cotizacion|cotiza /.test(t)) return TOOLS.filter(x => AGENDA_TOOLS.includes(x.function.name));
+  if (EXISTING_RE.test(t)) return TOOLS;
   const looksLikeNewQuote = /\$|\d/.test(t) || state.draft.items.length > 0 || /cotiza/.test(t);
   return looksLikeNewQuote ? TOOLS.filter(x => CORE_TOOLS.includes(x.function.name)) : TOOLS;
 };
@@ -317,7 +337,61 @@ const planStatus = async (ctx: AgentCtx, a: any): Promise<Mutation> => {
   };
 };
 
-const MUTATORS: Record<string, (ctx: AgentCtx, a: any) => Promise<Mutation>> = { editar_cotizacion: planEdit, cambiar_estatus: planStatus };
+const meetingLine = (m: any) => ({ id: m.id, fecha: m.date, dia: diaDe(m.date), hora: m.time, cliente: m.clientName, tipo: m.type, titulo: m.title, lugar: m.location || '', responsable: m.owner, estatus: m.status });
+
+const meetingConflicts = async (db: any, date: string, time: string, owner: string, ignoreId?: string) => {
+  const snap = await db.collection('meetings').where('date', '==', date).get();
+  return snap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
+    .filter((m: any) => m.id !== ignoreId && ACTIVE_CITA.includes(m.status) && norm(m.owner) === norm(owner) && Math.abs(minutes(m.time) - minutes(time)) < 60);
+};
+
+const findMeeting = async (ctx: AgentCtx, a: any): Promise<{ ref: any; data: any } | { error: string }> => {
+  if (a.cita_id) {
+    const s = await ctx.db.collection('meetings').doc(String(a.cita_id)).get();
+    return s.exists ? { ref: s.ref, data: { id: s.id, ...s.data() } } : { error: 'No encontre esa cita.' };
+  }
+  const since = a.fecha_actual && validDate(a.fecha_actual) ? a.fecha_actual : todayMx();
+  const snap = await ctx.db.collection('meetings').where('date', '>=', since).get();
+  const term = norm(a.cliente);
+  let list = snap.docs.map((d: any) => ({ ref: d.ref, data: { id: d.id, ...d.data() } }))
+    .filter((x: any) => ACTIVE_CITA.includes(x.data.status))
+    .filter((x: any) => !a.fecha_actual || x.data.date === a.fecha_actual)
+    .filter((x: any) => !term || term.split(' ').every((t: string) => norm(`${x.data.clientName} ${x.data.title}`).includes(t)))
+    .sort((x: any, y: any) => `${x.data.date} ${x.data.time}`.localeCompare(`${y.data.date} ${y.data.time}`));
+  if (!list.length) return { error: `No encontre citas pendientes${a.cliente ? ` de "${a.cliente}"` : ''}. Usa ver_agenda para revisar.` };
+  if (list.length > 1) return { error: 'Hay varias citas que coinciden; pregunta cual (por fecha y hora).', opciones: list.slice(0, 6).map((x: any) => meetingLine(x.data)) } as any;
+  return list[0];
+};
+
+const planCita = async (ctx: AgentCtx, a: any): Promise<Mutation> => {
+  const f: any = await findMeeting(ctx, a);
+  if (f.error) return f;
+  const m = f.data;
+  const upd: any = {};
+  if (a.fecha) { if (!validDate(a.fecha)) return { error: 'Fecha invalida, usa YYYY-MM-DD.' }; upd.date = a.fecha; }
+  if (a.hora) { const h = normHora(a.hora); if (!h) return { error: 'Hora invalida, usa HH:MM (24h).' }; upd.time = h; }
+  for (const [k, v] of [['location', a.lugar], ['notes', a.notas], ['title', a.titulo]] as const) if (v !== undefined && v !== null && String(v).trim()) upd[k] = String(v).trim();
+  if (a.tipo) { if (!CITA_TIPOS.includes(a.tipo)) return { error: `Tipo invalido: ${CITA_TIPOS.join(', ')}` }; upd.type = a.tipo; }
+  if (a.estatus) { if (!CITA_ESTATUS.includes(a.estatus)) return { error: `Estatus invalido: ${CITA_ESTATUS.join(', ')}` }; upd.status = a.estatus; }
+  const moved = (upd.date && upd.date !== m.date) || (upd.time && upd.time !== m.time);
+  if (moved && !upd.status) upd.status = 'Reagendada';
+  if (!Object.keys(upd).length) return { error: 'No me dijiste que cambiar de la cita.' };
+  const newDate = upd.date || m.date, newTime = upd.time || m.time;
+  if (moved && newDate < todayMx()) return { error: 'Esa fecha ya paso.' };
+  const choques = moved && upd.status !== 'Cancelada' ? await meetingConflicts(ctx.db, newDate, newTime, m.owner, m.id) : [];
+  const cambios: any = {};
+  for (const k of Object.keys(upd)) cambios[k] = { de: m[k] ?? '', a: upd[k] };
+  return {
+    preview: { cita: meetingLine(m), cambios, aviso_choque: choques.length ? choques.map((c: any) => `${c.clientName} ${c.time}`) : undefined },
+    commit: async () => {
+      await f.ref.set(upd, { merge: true });
+      await audit(ctx, 'modificar_cita', { id: m.id, cliente: m.clientName, upd });
+      return { aplicado: true, mensaje: upd.status === 'Cancelada' ? `Cancele la cita con ${m.clientName}.` : `Listo, actualice la cita con ${m.clientName}${moved ? ` para el ${diaDe(newDate)} ${newDate} a las ${newTime}` : ''}.` };
+    }
+  };
+};
+
+const MUTATORS: Record<string, (ctx: AgentCtx, a: any) => Promise<Mutation>> = { editar_cotizacion: planEdit, cambiar_estatus: planStatus, modificar_cita: planCita };
 
 export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<any> => {
   const { db, state } = ctx;
@@ -471,6 +545,69 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
       return { creada: true, copiada_de: q.data.quoteNumber, ...res, instruccion: 'El PDF ya se envio. Responde solo con una linea corta de cierre.' };
     }
 
+    if (name === 'ver_agenda') {
+      const desde = validDate(a.desde) ? a.desde : todayMx();
+      const hasta = validDate(a.hasta) ? a.hasta : addDaysIso(desde, 7);
+      const snap = await db.collection('meetings').where('date', '>=', desde).where('date', '<=', hasta).get();
+      const term = norm(a.texto);
+      const lista = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
+        .filter((m: any) => a.incluir_canceladas || m.status !== 'Cancelada')
+        .filter((m: any) => !a.solo_mias || norm(m.owner) === norm(ctx.senderName))
+        .filter((m: any) => !term || term.split(' ').every((t: string) => norm(`${m.clientName} ${m.title}`).includes(t)))
+        .sort((x: any, y: any) => `${x.date} ${x.time}`.localeCompare(`${y.date} ${y.time}`));
+      return { desde, hasta, total: lista.length, citas: lista.slice(0, 25).map(meetingLine), instruccion: 'Resume corto, una linea por cita: dia, fecha, hora, cliente y tipo. Si no hay citas, dilo y ofrece agendar.' };
+    }
+
+    if (name === 'agendar_cita') {
+      if (!validDate(a.fecha)) return { error: 'Falta una fecha valida (YYYY-MM-DD). Pregunta que dia.' };
+      const hora = normHora(a.hora);
+      if (!hora) return { error: 'Falta una hora valida (HH:MM, 24h). Pregunta a que hora.' };
+      const hoy = todayMx();
+      if (a.fecha < hoy || (a.fecha === hoy && hora < nowHmMx())) return { error: `Esa fecha/hora ya paso (hoy es ${hoy}, ${diaDe(hoy)}). Confirma la fecha correcta con el vendedor.` };
+      if (a.tipo && !CITA_TIPOS.includes(a.tipo)) return { error: `Tipo invalido: ${CITA_TIPOS.join(', ')}` };
+
+      let client: any = null;
+      if (a.cliente_id) {
+        const s = await db.collection('clients').doc(String(a.cliente_id)).get();
+        if (s.exists) client = { id: s.id, ...s.data() };
+      }
+      if (!client) {
+        const matches = await fuzzyClients(db, a.cliente);
+        const top = matches[0];
+        const tied = matches.filter((x: any) => x.score === top?.score);
+        if (top && tied.length > 1) return { error: 'Hay varios clientes parecidos; pregunta cual es.', opciones: tied.slice(0, 5).map((x: any) => ({ id: x.c.id, nombre: x.c.name, empresa: x.c.company })) } as any;
+        if (top) client = top.c;
+      }
+      let creado = false;
+      if (!client) {
+        const ref = db.collection('clients').doc();
+        client = {
+          id: ref.id, name: String(a.cliente).trim(), company: String(a.cliente).trim(), phone: a.telefono || '', email: '', rfc: '', contactRole: '', address: '',
+          source: 'WhatsApp', status: 'Prospecto', owner: `Ventas (WhatsApp - ${ctx.senderName})`, notes: '', createdAt: new Date().toISOString()
+        };
+        creado = true;
+        if (!a.forzar) {
+          const choques0 = await meetingConflicts(db, a.fecha, hora, ctx.senderName);
+          if (choques0.length) return { choque: true, citas_en_conflicto: choques0.map(meetingLine), instruccion: 'Avisa del choque de horario y pregunta si la agenda de todos modos u otra hora. Si dice que de todos modos, llama de nuevo con forzar=true.' };
+        }
+        await ref.set(client);
+      }
+      if (!a.forzar && !creado) {
+        const choques = await meetingConflicts(db, a.fecha, hora, ctx.senderName);
+        if (choques.length) return { choque: true, citas_en_conflicto: choques.map(meetingLine), instruccion: 'Avisa del choque de horario y pregunta si la agenda de todos modos u otra hora. Si dice que de todos modos, llama de nuevo con forzar=true.' };
+      }
+      const tipo = a.tipo || 'Visita tecnica';
+      const ref = db.collection('meetings').doc();
+      const meeting = {
+        id: ref.id, clientId: client.id, clientName: client.company || client.name, title: String(a.titulo || '').trim() || tipo,
+        date: a.fecha, time: hora, type: tipo, owner: ctx.senderName, location: String(a.lugar || '').trim() || client.address || '',
+        status: 'Programada', notes: String(a.notas || '').trim()
+      };
+      await ref.set(meeting);
+      await audit(ctx, 'agendar_cita', { id: ref.id, cliente: meeting.clientName, fecha: a.fecha, hora });
+      return { agendada: true, cliente_nuevo_creado: creado, cita: meetingLine(meeting), instruccion: 'Confirma en una o dos lineas: dia, fecha, hora, cliente y lugar si hay. Si creaste cliente nuevo, mencionalo. No ofrezcas mas de una cosa.' };
+    }
+
     return { error: `Herramienta desconocida: ${name}` };
   } catch (err: any) {
     console.error(`Error en herramienta ${name}:`, err);
@@ -483,7 +620,7 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
 // ---------------------------------------------------------------------
 export const buildSystemPrompt = (state: AgentState, senderName: string) => {
   const hoy = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'full', timeStyle: 'short' });
-  return `Eres Nova, asistente de TecnoPatch (telecomunicaciones, CCTV, cableado, redes, VoIP, control de acceso; Guadalajara). Hablas por WhatsApp con ${senderName}, del equipo. Tono cercano y directo, espanol de Mexico, mensajes MUY cortos (sin tablas ni markdown pesado). Hoy es ${hoy}.
+  return `Eres Nova, asistente de TecnoPatch (telecomunicaciones, CCTV, cableado, redes, VoIP, control de acceso; Guadalajara). Hablas por WhatsApp con ${senderName}, del equipo. Tono cercano y directo, espanol de Mexico, mensajes MUY cortos (sin tablas ni markdown pesado). Hoy es ${hoy} (fecha ISO ${todayMx()}).
 
 Entiendes mensajes desordenados, audios y listas pegadas, y los EJECUTAS con tus herramientas, encadenandolas en el mismo turno. Nunca inventes folios, precios, clientes ni totales: salen de las herramientas. Si una herramienta da error, explicalo claro.
 
@@ -499,6 +636,11 @@ EXISTENTES
 - Modificar (precios, cantidades, partidas, alcance, ajuste): editar_cotizacion NO aplica; muestra el antes/despues corto y pide "si"; con el si, confirmar_accion; con no, cancelar_accion.
 - Estatus: cambiar_estatus (con confirmacion). Copiar a otro cliente: duplicar_cotizacion. Reenviar PDF: enviar_pdf. Resumenes/seguimiento: resumen_ventas.
 - "esa/la primera": saca el folio de lo hablado; si hay duda, pregunta.
+
+AGENDA (CRM compartido)
+- Puedes consultar y agendar citas/visitas: ver_agenda, agendar_cita, modificar_cita. Convierte "manana", "el jueves", "a las 4" a fecha YYYY-MM-DD y hora 24h usando la fecha de hoy. "Proximo jueves" = el jueves que sigue a hoy.
+- Para agendar necesitas cliente, dia y hora. Si dan todo en un mensaje, agenda de inmediato. Si falta algo (o solo dicen "ayudame a agendar una cita"), pregunta TODO lo que falta en UN solo mensaje corto, no campo por campo (ej: "Va. Con quien, que dia y a que hora? Si quieres dime tambien el lugar o el motivo"). Lugar y motivo son opcionales, no los exijas. Tipo por defecto: Visita tecnica. Agendar no pide confirmacion (di el resultado); reagendar/cancelar con modificar_cita si pide "si".
+- Si agendar_cita avisa choque, preguntalo. Si el cliente no existe, se crea como Prospecto y lo mencionas.
 
 IMAGENES/PDFS llegan como texto entre corchetes: extrae partidas y arma el borrador. No copies m2 salvo que lo pidan. Si los precios ya traen IVA, pregunta.
 OTRAS PREGUNTAS (equipos, redes, ventas o cualquier tema): responde util y breve, sin herramientas de cotizaciones ni mostrar historial.
@@ -552,12 +694,13 @@ export const tryFastPath = async (ctx: AgentCtx): Promise<string | null> => {
   const { state } = ctx;
 
   if (/^\s*[¿]?(ayuda|help|men[uú]|comandos|qu[eé] puedes hacer)\s*[?!]*\s*$/i.test(text)) {
-    return `Soy Nova, la asistente de TecnoPatch. Puedo:\n- Crear cotizaciones: dime cliente y partidas con precio sin IVA (acepto texto, audios, fotos y PDFs)\n- Duplicar una cotización para otro cliente\n- Editar precios, partidas, alcance o notas (te pido confirmación)\n- Dejar una cotización en un subtotal exacto o subirle un porcentaje\n- Cambiar el estatus y reenviar PDFs\n- Consultar cotizaciones y darte un resumen de ventas\n\nEscribe "cancela" para descartar un borrador.`;
+    return `Soy Nova, la asistente de TecnoPatch. Puedo:\n- Crear cotizaciones: dime cliente y partidas con precio sin IVA (acepto texto, audios, fotos y PDFs)\n- Duplicar una cotización para otro cliente\n- Editar precios, partidas, alcance o notas (te pido confirmación)\n- Dejar una cotización en un subtotal exacto o subirle un porcentaje\n- Cambiar el estatus y reenviar PDFs\n- Consultar cotizaciones y darte un resumen de ventas\n- Agenda del CRM: agendar visitas y citas, ver tu agenda, reagendar o cancelar (ej: \"agenda a Kelly visita mañana 10am\")\n\nEscribe "cancela" para descartar un borrador.`;
   }
 
   if (state.pending && Date.now() - state.pending.at < 30 * 60 * 1000 && state.pending.msgId !== ctx.messageId) {
     if (YES.test(text)) {
       const r: any = await executeTool(ctx, 'confirmar_accion', {});
+      if (r?.aplicado && r.mensaje) return r.mensaje;
       if (r?.aplicado) return r.pdf_enviado ? `Listo, apliqué el cambio a ${r.folio} y te mandé el PDF actualizado.` : `Listo, apliqué el cambio a ${r.folio}.`;
       return `No pude aplicar el cambio: ${r?.error || 'error desconocido'}`;
     }
