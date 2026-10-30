@@ -2,8 +2,10 @@ import { getAdminDb } from './_lib/firebaseAdmin.js';
 import { sendWhatsAppText, uploadWhatsAppMedia, sendWhatsAppDocument, downloadWhatsAppMedia } from './_lib/whatsapp.js';
 import { runAgent, tryFastPath, emptyState, emptyDraft, type AgentState } from './_lib/agent.js';
 import OpenAI, { toFile } from 'openai';
+import crypto from 'crypto';
 
-export const config = { maxDuration: 60 };
+// bodyParser desactivado para poder verificar la firma de Meta sobre el cuerpo crudo
+export const config = { maxDuration: 60, api: { bodyParser: false } };
 
 // Groq (interfaz compatible con OpenAI)
 const groq = new OpenAI({
@@ -11,6 +13,21 @@ const groq = new OpenAI({
   baseURL: 'https://api.groq.com/openai/v1',
   maxRetries: 0, // sin reintentos automaticos del SDK: el agente maneja el fallback y el limite de tiempo
 });
+
+// Respaldo: Gemini por su endpoint compatible con OpenAI (solo si hay GEMINI_API_KEY)
+const gemini = process.env.GEMINI_API_KEY
+  ? new OpenAI({ apiKey: process.env.GEMINI_API_KEY, baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', maxRetries: 0 })
+  : undefined;
+
+const readRawBody = (req: any): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+
+const normalizePhone = (n: string) => String(n || '').replace(/\D/g, '').replace(/^521/, '52');
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 const DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
@@ -115,7 +132,31 @@ export default async function handler(req: any, res: any) {
 
   const startedAt = Date.now();
   try {
-    const entry = req.body?.entry?.[0];
+    // Cuerpo: crudo si el parser esta desactivado; si Vercel ya lo parseo, se usa tal cual
+    let body: any = req.body;
+    let rawBody: string | null = null;
+    if (body === undefined) {
+      rawBody = await readRawBody(req);
+      try { body = rawBody ? JSON.parse(rawBody) : {}; } catch { body = {}; }
+    } else if (typeof body === 'string') {
+      rawBody = body;
+      try { body = JSON.parse(body); } catch { body = {}; }
+    }
+
+    // Verificacion de firma de Meta (se activa al definir WHATSAPP_APP_SECRET en Vercel)
+    const appSecret = process.env.WHATSAPP_APP_SECRET;
+    if (appSecret) {
+      const sigHeader = String(req.headers?.['x-hub-signature-256'] || '');
+      const payload = rawBody ?? JSON.stringify(body).replace(/[\u0080-\uffff]/g, (c: string) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+      const expected = 'sha256=' + crypto.createHmac('sha256', appSecret).update(payload).digest('hex');
+      const ok = sigHeader.length === expected.length && crypto.timingSafeEqual(Buffer.from(sigHeader), Buffer.from(expected));
+      if (!ok) {
+        console.error('whatsapp-webhook: firma invalida, peticion rechazada.');
+        return res.status(403).json({ error: 'Firma invalida' });
+      }
+    }
+
+    const entry = body?.entry?.[0];
     const value = entry?.changes?.[0]?.value;
     const message = value?.messages?.[0];
 
@@ -123,7 +164,14 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ ok: true });
     }
 
-    const from = (message.from as string).replace(/^521/, '52');
+    const from = normalizePhone(message.from as string);
+
+    // Lista de numeros autorizados (opcional): WHATSAPP_ALLOWED_NUMBERS=5233xxxxxxxx,5233yyyyyyyy
+    const allowed = (process.env.WHATSAPP_ALLOWED_NUMBERS || '').split(',').map(normalizePhone).filter(Boolean);
+    if (allowed.length > 0 && !allowed.includes(from)) {
+      console.warn('whatsapp-webhook: numero no autorizado, ignorado:', from);
+      return res.status(200).json({ ok: true, ignored: true });
+    }
     const messageId = message.id as string;
     const db = getAdminDb();
 
@@ -251,7 +299,7 @@ export default async function handler(req: any, res: any) {
       } else {
         const history = priorMessages.slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 1500) }));
         const deadline = startedAt + 50000; // Vercel corta a los 60 s
-        reply = await runAgent(groq, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
+        reply = await runAgent({ groq, gemini }, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
       }
     } catch (err: any) {
       console.error('Error en el agente:', err);

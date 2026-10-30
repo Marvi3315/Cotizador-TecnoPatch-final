@@ -483,19 +483,22 @@ ${state.pending ? `PENDIENTE DE CONFIRMAR: ${state.pending.tool} ${JSON.stringif
 // Loop del agente con fallback de modelos, limite de tiempo y sin esperas largas
 // ---------------------------------------------------------------------
 type Msg = { role: 'user' | 'assistant'; content: string };
-const MODEL_CHAIN: Array<{ model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
-  { model: 'openai/gpt-oss-120b', reasoning: 'low' },
-  { model: 'llama-3.3-70b-versatile' },
-  { model: 'openai/gpt-oss-20b', reasoning: 'low' }
+const MODEL_CHAIN: Array<{ provider: 'groq' | 'gemini'; model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
+  { provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' },
+  { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+  { provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' },
+  { provider: 'gemini', model: 'gemini-3.6-flash' } // respaldo: si Groq esta sin cuota o caido
 ];
 
 // Prueba cada modelo UNA vez (si hay limite de tokens o falla, pasa de inmediato al siguiente).
-const chatWithFallback = async (client: any, messages: any[], startAt: number, deadline: number) => {
+const chatWithFallback = async (clients: { groq: any; gemini?: any }, messages: any[], startAt: number, deadline: number) => {
   const errors: string[] = [];
   for (let m = startAt; m < MODEL_CHAIN.length; m++) {
     const remaining = deadline - Date.now();
     if (remaining < 4000) { errors.push('sin tiempo'); break; }
-    const { model, reasoning } = MODEL_CHAIN[m];
+    const { provider, model, reasoning } = MODEL_CHAIN[m];
+    const client = clients[provider];
+    if (!client) continue; // proveedor no configurado
     try {
       const params: any = { model, messages, tools: TOOLS, tool_choice: 'auto', temperature: 0.2 };
       if (reasoning) params.reasoning_effort = reasoning;
@@ -516,6 +519,10 @@ export const tryFastPath = async (ctx: AgentCtx): Promise<string | null> => {
   const text = ctx.userText.trim();
   if (text.length > 60 || text.startsWith('[')) return null;
   const { state } = ctx;
+
+  if (/^\s*[¿]?(ayuda|help|men[uú]|comandos|qu[eé] puedes hacer)\s*[?!]*\s*$/i.test(text)) {
+    return `Soy Nova, la asistente de TecnoPatch. Puedo:\n- Crear cotizaciones: dime cliente y partidas con precio sin IVA (acepto texto, audios, fotos y PDFs)\n- Duplicar una cotización para otro cliente\n- Editar precios, partidas, alcance o notas (te pido confirmación)\n- Dejar una cotización en un subtotal exacto o subirle un porcentaje\n- Cambiar el estatus y reenviar PDFs\n- Consultar cotizaciones y darte un resumen de ventas\n\nEscribe "cancela" para descartar un borrador.`;
+  }
 
   if (state.pending && Date.now() - state.pending.at < 30 * 60 * 1000 && state.pending.msgId !== ctx.messageId) {
     if (YES.test(text)) {
@@ -540,7 +547,7 @@ export const tryFastPath = async (ctx: AgentCtx): Promise<string | null> => {
   return null;
 };
 
-export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[], deadline: number, persist?: () => Promise<void>): Promise<string> => {
+export const runAgent = async (clients: { groq: any; gemini?: any }, ctx: AgentCtx, history: Msg[], deadline: number, persist?: () => Promise<void>): Promise<string> => {
   const messages: any[] = [
     { role: 'system', content: buildSystemPrompt(ctx.state, ctx.senderName) },
     ...history.map(m => ({ role: m.role, content: m.content })),
@@ -555,7 +562,7 @@ export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[], deadl
     if (deadline - Date.now() < 5000) {
       return sentPdfFlag ? 'Listo, ahi te lo mande.' : 'Me estoy tardando de mas con eso. Lo que ya me diste quedo guardado: mandame un "listo" y sigo.';
     }
-    const { res, modelIndex: used } = await chatWithFallback(client, messages, modelIndex, deadline);
+    const { res, modelIndex: used } = await chatWithFallback(clients, messages, modelIndex, deadline);
     modelIndex = used;
     const msg = res.choices?.[0]?.message;
     const calls = msg?.tool_calls || [];
@@ -570,7 +577,7 @@ export const runAgent = async (client: any, ctx: AgentCtx, history: Msg[], deadl
       try { args = call.function?.arguments ? JSON.parse(call.function.arguments) : {}; } catch { args = {}; }
       const result = await executeTool(ctx, call.function?.name, args);
       console.log(`tool ${call.function?.name}:`, JSON.stringify(args).slice(0, 300), '->', JSON.stringify(result).slice(0, 300));
-      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 4000) });
+      messages.push({ role: 'tool', tool_call_id: call.id, name: call.function?.name, content: JSON.stringify(result).slice(0, 4000) });
       if (persist) { try { await persist(); } catch (e) { console.error('persist fallo:', e); } }
     }
   }
