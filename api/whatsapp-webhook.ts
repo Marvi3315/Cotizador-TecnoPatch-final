@@ -297,14 +297,14 @@ export default async function handler(req: any, res: any) {
       if (fast) {
         reply = fast;
       } else {
-        const history = priorMessages.slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 1500) }));
+        const history = priorMessages.slice(-8).map(m => ({ role: m.role, content: m.content.slice(0, 700) }));
         const deadline = startedAt + 50000; // Vercel corta a los 60 s
         reply = await runAgent({ groq, gemini }, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
       }
     } catch (err: any) {
       console.error('Error en el agente:', err);
       try { await db.collection('whatsappErrors').add({ at: Date.now(), from, userText: userText.slice(0, 300), error: String(err?.message || err).slice(0, 800) }); } catch { /* ignorar */ }
-      reply = `Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo.\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 220)})`;
+      reply = `Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo.\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 420)})`;
     }
 
     await sendWhatsAppText(from, reply);

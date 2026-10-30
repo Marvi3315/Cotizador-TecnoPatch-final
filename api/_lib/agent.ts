@@ -95,6 +95,20 @@ export const applyAdjustment = (items: Item[], aj?: { tipo?: string; valor?: num
   return items.map(i => ({ ...i }));
 };
 
+
+// Busca clientes por nombre/empresa tolerando errores de dedo y nombres parciales
+const fuzzyClients = async (db: any, texto: string) => {
+  const snap = await db.collection('clients').get();
+  const tokens = norm(texto).split(' ').filter(Boolean);
+  return snap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
+    .map((c: any) => {
+      const hay = norm(`${c.name} ${c.company}`);
+      const score = tokens.length ? tokens.filter((t: string) => hay.includes(t) || (t.length > 4 && hay.split(' ').some((w: string) => w.startsWith(t.slice(0, 4))))).length / tokens.length : 0;
+      return { c, score };
+    })
+    .filter((x: any) => x.score >= 0.5).sort((x: any, y: any) => y.score - x.score);
+};
+
 const findQuote = async (db: any, folioText: string): Promise<{ id: string; ref: any; data: any } | null> => {
   const folio = String(folioText || '').trim().toUpperCase();
   if (!folio) return null;
@@ -205,11 +219,22 @@ export const TOOLS: any[] = [
   { type: 'function', function: { name: 'duplicar_cotizacion', description: 'Crea cotizacion NUEVA copiando las partidas de otra, para otro cliente, con ajuste opcional. Envia el PDF.', parameters: { type: 'object', properties: { folio: { type: 'string' }, cliente_id: { type: 'string' }, cliente_nuevo: { type: 'object', properties: { nombre: { type: 'string' }, telefono: { type: 'string' }, empresa: { type: 'string' } }, required: ['nombre'] }, ajuste: ajusteSchema, alcance: { type: 'string' }, notas_tecnicas: { type: 'string' } }, required: ['folio'] } } },
   { type: 'function', function: { name: 'editar_cotizacion', description: 'Modifica una cotizacion EXISTENTE (partidas por numero desde 1, agregar/quitar, alcance, notas o ajuste). NO aplica: devuelve antes/despues y espera "si" del vendedor (luego confirmar_accion).', parameters: { type: 'object', properties: { folio: { type: 'string' }, actualizar: { type: 'array', items: { type: 'object', properties: { partida: { type: 'number' }, nombre: { type: 'string' }, cantidad: { type: 'number' }, precio_unitario: { type: 'number' } }, required: ['partida'] } }, agregar: { type: 'array', items: partidaSchema }, quitar: { type: 'array', items: { type: 'number' } }, alcance: { type: 'string' }, notas_tecnicas: { type: 'string' }, ajuste: ajusteSchema, enviar_pdf: { type: 'boolean' } }, required: ['folio'] } } },
   { type: 'function', function: { name: 'cambiar_estatus', description: 'Cambia estatus de una cotizacion (Borrador, Enviada, Seguimiento, Aceptada, Rechazada). Pide confirmacion.', parameters: { type: 'object', properties: { folio: { type: 'string' }, estatus: { type: 'string', enum: STATUSES }, motivo: { type: 'string' } }, required: ['folio', 'estatus'] } } },
-  { type: 'function', function: { name: 'confirmar_accion', description: 'Aplica la accion pendiente SOLO si el ultimo mensaje del vendedor dice que si.', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'cancelar_accion', description: 'Descarta la accion pendiente si el vendedor dice que no.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'confirmar_accion', description: 'Aplica la accion pendiente SOLO si el ultimo mensaje del vendedor dice que si.' } },
+  { type: 'function', function: { name: 'cancelar_accion', description: 'Descarta la accion pendiente si el vendedor dice que no.' } },
   { type: 'function', function: { name: 'enviar_pdf', description: 'Reenvia el PDF de una cotizacion existente.', parameters: { type: 'object', properties: { folio: { type: 'string' } }, required: ['folio'] } } },
   { type: 'function', function: { name: 'resumen_ventas', description: 'Resumen de los ultimos N dias (default 7): por estatus, por vendedor y cotizaciones estancadas (>5 dias sin cerrar).', parameters: { type: 'object', properties: { dias: { type: 'number' } } } } }
 ];
+
+
+const CORE_TOOLS = ['actualizar_borrador', 'crear_cotizacion', 'buscar_clientes'];
+const EXISTING_RE = /cot-\d|folio|historial|ultim|anterior|cambia|modifica|edita|duplic|copia|estatus|aceptad|rechazad|seguimiento|resumen|cuanto|cuantas|reenv|manda(me)? (la|el|esa|ese)|pdf|esa cotizacion|la de /i;
+// Solo se mandan al modelo las herramientas que la peticion probablemente necesita
+export const selectTools = (userText: string, state: AgentState): any[] => {
+  const t = userText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (state.pending || EXISTING_RE.test(t)) return TOOLS;
+  const looksLikeNewQuote = /\$|\d/.test(t) || state.draft.items.length > 0 || /cotiza/.test(t);
+  return looksLikeNewQuote ? TOOLS.filter(x => CORE_TOOLS.includes(x.function.name)) : TOOLS;
+};
 
 type Mutation = { error: string } | { preview: any; commit: () => Promise<any> };
 
@@ -316,16 +341,7 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
     if (name === 'cancelar_accion') { state.pending = null; return { ok: true, mensaje: 'Accion descartada.' }; }
 
     if (name === 'buscar_clientes') {
-      const snap = await db.collection('clients').get();
-      const tokens = norm(a.texto).split(' ').filter(Boolean);
-      const found = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
-        .map((c: any) => {
-          const hay = norm(`${c.name} ${c.company}`);
-          const score = tokens.length ? tokens.filter(t => hay.includes(t) || (t.length > 4 && hay.split(' ').some((w: string) => w.startsWith(t.slice(0, 4))))).length / tokens.length : 0;
-          return { c, score };
-        })
-        .filter(x => x.score >= 0.5).sort((x, y) => y.score - x.score).slice(0, 6)
-        .map(x => ({ id: x.c.id, nombre: x.c.name, empresa: x.c.company, telefono: x.c.phone || '' }));
+      const found = (await fuzzyClients(db, a.texto)).slice(0, 6).map((x: any) => ({ id: x.c.id, nombre: x.c.name, empresa: x.c.company, telefono: x.c.phone || '' }));
       return { coincidencias: found, nota: found.length ? '' : 'Sin coincidencias: es un cliente nuevo.' };
     }
 
@@ -382,11 +398,11 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
         if (s.exists) { d.clientId = String(a.cliente_id); d.newClient = null; }
         else return { error: `El cliente_id ${a.cliente_id} no existe. Usa buscar_clientes.` };
       } else if (a.cliente_nuevo?.nombre) {
-        // si ya existe un cliente con ese nombre, se reutiliza en vez de duplicarlo
-        const snap = await db.collection('clients').get();
+        // si ya existe UN cliente que coincide con ese nombre, se reutiliza en vez de duplicarlo
         const n = norm(a.cliente_nuevo.nombre);
-        const dup = snap.docs.find((x: any) => { const c = x.data(); return norm(c.name) === n || norm(c.company) === n; });
-        if (dup) { d.clientId = dup.id; d.newClient = null; }
+        const matches = await fuzzyClients(db, a.cliente_nuevo.nombre);
+        const full = matches.filter((x: any) => x.score === 1 || norm(x.c.name) === n || norm(x.c.company) === n);
+        if (full.length === 1) { d.clientId = full[0].c.id; d.newClient = null; }
         else { d.newClient = { name: String(a.cliente_nuevo.nombre).trim(), phone: String(a.cliente_nuevo.telefono || '').trim(), company: String(a.cliente_nuevo.empresa || '').trim() }; d.clientId = null; }
       }
       if (a.tipo_proyecto) d.projectType = String(a.tipo_proyecto);
@@ -397,7 +413,19 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
         d.items = a.partidas.filter((p: any) => p?.nombre).map((p: any) => ({ nombre: String(p.nombre).trim(), cantidad: Number(p.cantidad) > 0 ? Number(p.cantidad) : 1, precioUnitario: Number(p.precio_unitario) || 0 }));
       }
       const faltaPrecio = d.items.filter(i => !(i.precioUnitario > 0)).map(i => i.nombre);
-      return { ok: true, borrador: d, falta: [!(d.clientId || d.newClient) ? 'cliente' : '', faltaPrecio.length ? `precio de: ${faltaPrecio.join(', ')}` : '', !d.items.length ? 'partidas' : ''].filter(Boolean) };
+      const falta = [!(d.clientId || d.newClient) ? 'cliente' : '', faltaPrecio.length ? `precio de: ${faltaPrecio.join(', ')}` : '', !d.items.length ? 'partidas' : ''].filter(Boolean);
+      const resp: any = { ok: true, borrador: d, falta };
+      if (!falta.length) {
+        const clienteTxt = d.newClient?.name || '';
+        resp.cliente_resuelto = d.clientId ? 'cliente existente' : `cliente nuevo: ${clienteTxt}`;
+        if (!state.extrasAsked && !(d.projectScope && d.technicalNotes) && !WANTS_NOW.test(ctx.userText.slice(0, 120))) {
+          state.extrasAsked = true;
+          resp.instruccion = 'Cliente y partidas completos. Responde SOLO con una pregunta corta: si quiere agregar alcance del proyecto y/o notas tecnicas, o generarla asi ("genérala"). No llames crear_cotizacion todavia.';
+        } else {
+          resp.instruccion = 'Ya esta completo: llama crear_cotizacion.';
+        }
+      }
+      return resp;
     }
 
     if (name === 'crear_cotizacion') {
@@ -460,9 +488,9 @@ Entiendes mensajes desordenados, audios y listas pegadas, y los EJECUTAS con tus
 
 COTIZACION NUEVA
 - Si piden una cotizacion sin dar datos, pregunta SOLO esto, en 2 lineas: cliente y partidas (producto, cantidad, precio sin IVA). Nada de listas largas de preguntas.
-- Cliente: buscar_clientes antes de tratarlo como nuevo (basta el nombre; telefono opcional, no lo exijas).
+- Cliente: pasa el nombre en cliente_nuevo de actualizar_borrador (el sistema reconoce solo si ya existe en el CRM). Telefono opcional, no lo exijas.
 - Cada vez que den datos, llama actualizar_borrador con TODO lo acumulado. Precios SIN IVA (el sistema suma 16%). Cantidad default 1. Si dan precio total de una partida, divide. Si falta un precio, pregunta solo eso.
-- Si dan alcance o notas tecnicas, guardalos redactados en espanol profesional (sin cambiar datos). Un texto largo de "notas" o "en notas:" va en notas_tecnicas completo.
+- Si dan alcance o notas tecnicas, guardalos redactados en espanol profesional (sin cambiar datos). Sigue siempre el campo "instruccion" que devuelvan las herramientas. Un texto largo de "notas" o "en notas:" va en notas_tecnicas completo.
 - Con cliente y partidas con precio, llama crear_cotizacion. Si responde falta_preguntar, haz esa pregunta UNA vez y al contestar vuelve a llamarla. Para dejar un subtotal exacto o subir margen usa "ajuste". Tras enviar el PDF, cierra con una linea.
 
 EXISTENTES
@@ -486,12 +514,13 @@ type Msg = { role: 'user' | 'assistant'; content: string };
 const MODEL_CHAIN: Array<{ provider: 'groq' | 'gemini'; model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
   { provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' },
   { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+  { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct' },
   { provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' },
   { provider: 'gemini', model: 'gemini-3.6-flash' } // respaldo: si Groq esta sin cuota o caido
 ];
 
 // Prueba cada modelo UNA vez (si hay limite de tokens o falla, pasa de inmediato al siguiente).
-const chatWithFallback = async (clients: { groq: any; gemini?: any }, messages: any[], startAt: number, deadline: number) => {
+const chatWithFallback = async (clients: { groq: any; gemini?: any }, messages: any[], tools: any[], startAt: number, deadline: number) => {
   const errors: string[] = [];
   for (let m = startAt; m < MODEL_CHAIN.length; m++) {
     const remaining = deadline - Date.now();
@@ -500,12 +529,13 @@ const chatWithFallback = async (clients: { groq: any; gemini?: any }, messages: 
     const client = clients[provider];
     if (!client) continue; // proveedor no configurado
     try {
-      const params: any = { model, messages, tools: TOOLS, tool_choice: 'auto', temperature: 0.2 };
+      const params: any = { model, messages, tools, tool_choice: 'auto', temperature: 0.2 };
       if (reasoning) params.reasoning_effort = reasoning;
       const res = await client.chat.completions.create(params, { timeout: Math.min(22000, remaining - 2000), maxRetries: 0 });
       return { res, modelIndex: m };
     } catch (err: any) {
-      const detail = String(err?.error?.error?.message || err?.message || err).replace(/\s+/g, ' ').slice(0, 160);
+      const rawMsg = String((Array.isArray(err?.error) ? err.error[0]?.error?.message : err?.error?.error?.message) || err?.message || err).replace(/\s+/g, ' ');
+      const detail = err?.status === 429 ? (/per day|TPD/i.test(rawMsg) ? 'limite diario' : 'limite por minuto') : rawMsg.slice(0, 100);
       console.error(`LLM fallo (${model}) status=${err?.status}:`, detail);
       errors.push(`${model.split('/').pop()}: ${err?.status || 'sin respuesta'} ${detail}`);
     }
@@ -553,6 +583,7 @@ export const runAgent = async (clients: { groq: any; gemini?: any }, ctx: AgentC
     ...history.map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: ctx.userText }
   ];
+  const selectedTools = selectTools(ctx.userText, ctx.state);
   let modelIndex = 0;
   let sentPdfFlag = false;
   const origSend = ctx.sendPdf;
@@ -562,7 +593,7 @@ export const runAgent = async (clients: { groq: any; gemini?: any }, ctx: AgentC
     if (deadline - Date.now() < 5000) {
       return sentPdfFlag ? 'Listo, ahi te lo mande.' : 'Me estoy tardando de mas con eso. Lo que ya me diste quedo guardado: mandame un "listo" y sigo.';
     }
-    const { res, modelIndex: used } = await chatWithFallback(clients, messages, modelIndex, deadline);
+    const { res, modelIndex: used } = await chatWithFallback(clients, messages, selectedTools, modelIndex, deadline);
     modelIndex = used;
     const msg = res.choices?.[0]?.message;
     const calls = msg?.tool_calls || [];
