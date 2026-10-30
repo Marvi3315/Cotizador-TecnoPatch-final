@@ -29,6 +29,7 @@ export type AgentCtx = {
   messageId: string;
   state: AgentState;
   sendPdf: (buffer: Buffer, filename: string, caption: string) => Promise<void>;
+  notify?: (text: string) => Promise<void>;
 };
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -143,10 +144,29 @@ const sendQuotePdf = async (ctx: AgentCtx, q: any, caption: string) => {
   await ctx.sendPdf(pdfFromDoc(q), `${q.quoteNumber}.pdf`, caption);
 };
 
+const teamMessage = (who: string, action: string, d: any): string => {
+  const mxn = (n: any) => money(Number(n) || 0);
+  if (action === 'crear_cotizacion' || action === 'duplicar_cotizacion') return `🧾 ${who} creo la cotizacion ${d.folio} para ${d.cliente}. Subtotal ${mxn(d.subtotal)}, total ${mxn(d.total)} MXN.`;
+  if (action === 'editar_cotizacion') return `✏️ ${who} modifico la cotizacion ${d.folio}.`;
+  if (action === 'cambiar_estatus') return `🔄 ${who} cambio ${d.folio} de ${d.de} a ${d.a}.`;
+  if (action === 'agendar_cita') return `📅 ${who} agendo una cita con ${d.cliente} el ${d.fecha} a las ${d.hora}.`;
+  if (action === 'modificar_cita') {
+    const u = d.upd || {};
+    if (u.status === 'Cancelada') return `❌ ${who} cancelo la cita con ${d.cliente}.`;
+    if (u.date || u.time) return `📅 ${who} reagendo la cita con ${d.cliente}${u.date ? ` para el ${u.date}` : ''}${u.time ? ` a las ${u.time}` : ''}.`;
+    return `📅 ${who} actualizo la cita con ${d.cliente}.`;
+  }
+  return '';
+};
+
 const audit = async (ctx: AgentCtx, action: string, detail: any) => {
   try {
     await ctx.db.collection('whatsappAudit').add({ at: Date.now(), from: ctx.from, vendedor: ctx.senderName, action, detail });
   } catch (e) { console.error('audit fallo:', e); }
+  try {
+    const text = teamMessage(ctx.senderName, action, detail);
+    if (text && ctx.notify) await ctx.notify(text);
+  } catch (e) { console.error('aviso al equipo fallo:', e); }
 };
 
 const resolveClient = async (ctx: AgentCtx, d: { clientId: string | null; newClient: Draft['newClient'] }) => {
@@ -237,6 +257,7 @@ export const TOOLS: any[] = [
   { type: 'function', function: { name: 'cancelar_accion', description: 'Descarta la accion pendiente si el vendedor dice que no.' } },
   { type: 'function', function: { name: 'enviar_pdf', description: 'Reenvia el PDF de una cotizacion existente.', parameters: { type: 'object', properties: { folio: { type: 'string' } }, required: ['folio'] } } },
   { type: 'function', function: { name: 'resumen_ventas', description: 'Resumen de los ultimos N dias (default 7): por estatus, por vendedor y cotizaciones estancadas (>5 dias sin cerrar).', parameters: { type: 'object', properties: { dias: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'listar_clientes', description: 'Lista los clientes dados de alta en el CRM (orden alfabetico). Filtros opcionales por texto o estatus (Prospecto, Cotizado, Seguimiento, Cliente, Pausado).', parameters: { type: 'object', properties: { texto: { type: 'string' }, estatus: { type: 'string', enum: ['Prospecto', 'Cotizado', 'Seguimiento', 'Cliente', 'Pausado'] }, limite: { type: 'number' } } } } },
   { type: 'function', function: { name: 'ver_agenda', description: 'Consulta las citas/visitas de la agenda del CRM. Por defecto hoy y los proximos 7 dias. Fechas YYYY-MM-DD.', parameters: { type: 'object', properties: { desde: { type: 'string' }, hasta: { type: 'string' }, texto: { type: 'string', description: 'filtra por cliente/titulo' }, solo_mias: { type: 'boolean' }, incluir_canceladas: { type: 'boolean' } } } } },
   { type: 'function', function: { name: 'agendar_cita', description: 'Agenda una cita/visita en el CRM. Convierte fechas relativas (manana, el jueves) a YYYY-MM-DD y la hora a HH:MM de 24h. Si hay choque de horario avisa y no agenda salvo forzar=true.', parameters: { type: 'object', properties: { cliente: { type: 'string', description: 'nombre del cliente o empresa' }, cliente_id: { type: 'string' }, telefono: { type: 'string', description: 'solo si es cliente nuevo' }, fecha: { type: 'string' }, hora: { type: 'string' }, tipo: { type: 'string', enum: CITA_TIPOS }, titulo: { type: 'string' }, lugar: { type: 'string' }, notas: { type: 'string' }, forzar: { type: 'boolean' } }, required: ['cliente', 'fecha', 'hora'] } } },
   { type: 'function', function: { name: 'modificar_cita', description: 'Reagenda, cancela o marca como realizada una cita EXISTENTE (o cambia lugar/notas/tipo). NO aplica: pide "si" al vendedor (luego confirmar_accion). Identificala con cliente (+ fecha_actual si hay varias) o cita_id.', parameters: { type: 'object', properties: { cita_id: { type: 'string' }, cliente: { type: 'string' }, fecha_actual: { type: 'string' }, fecha: { type: 'string' }, hora: { type: 'string' }, estatus: { type: 'string', enum: CITA_ESTATUS }, tipo: { type: 'string', enum: CITA_TIPOS }, lugar: { type: 'string' }, notas: { type: 'string' }, titulo: { type: 'string' } } } } }
@@ -245,7 +266,7 @@ export const TOOLS: any[] = [
 
 const AGENDA_TOOLS = ['ver_agenda', 'agendar_cita', 'modificar_cita', 'buscar_clientes', 'confirmar_accion', 'cancelar_accion'];
 const AGENDA_RE = /\bcitas?\b|agend|reagend|reunion|junta|visita|calendario|que tengo|manana|pasado manana|esta semana|proxima semana|lunes|martes|miercoles|jueves|viernes|sabado|domingo|a las \d|recuerdame/;
-const CORE_TOOLS = ['actualizar_borrador', 'crear_cotizacion', 'buscar_clientes'];
+const CORE_TOOLS = ['actualizar_borrador', 'crear_cotizacion', 'buscar_clientes', 'listar_clientes'];
 const EXISTING_RE = /cot-\d|folio|historial|ultim|anterior|cambia|modifica|edita|duplic|copia|estatus|aceptad|rechazad|seguimiento|resumen|cuanto|cuantas|reenv|manda(me)? (la|el|esa|ese)|pdf|esa cotizacion|la de /i;
 // Solo se mandan al modelo las herramientas que la peticion probablemente necesita
 export const selectTools = (userText: string, state: AgentState): any[] => {
@@ -545,6 +566,21 @@ export const executeTool = async (ctx: AgentCtx, name: string, a: any): Promise<
       return { creada: true, copiada_de: q.data.quoteNumber, ...res, instruccion: 'El PDF ya se envio. Responde solo con una linea corta de cierre.' };
     }
 
+    if (name === 'listar_clientes') {
+      const snap = await db.collection('clients').get();
+      const term = norm(a.texto);
+      const todos = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
+        .filter((c: any) => !a.estatus || c.status === a.estatus)
+        .filter((c: any) => !term || term.split(' ').every((t: string) => norm(`${c.name} ${c.company}`).includes(t)))
+        .sort((x: any, y: any) => norm(x.company || x.name).localeCompare(norm(y.company || y.name)));
+      const lim = Math.min(Math.max(Number(a.limite) || 40, 1), 60);
+      return {
+        total: todos.length, mostrando: Math.min(todos.length, lim),
+        clientes: todos.slice(0, lim).map((c: any) => ({ nombre: c.company || c.name, contacto: c.company && c.name && c.name !== c.company ? c.name : '', telefono: c.phone || '', estatus: c.status || '' })),
+        instruccion: 'Lista numerada, una linea por cliente: nombre (contacto si hay) y estatus. Dile el total al inicio. Si total > mostrando, avisa y ofrece filtrar por nombre o estatus. Sin negritas.'
+      };
+    }
+
     if (name === 'ver_agenda') {
       const desde = validDate(a.desde) ? a.desde : todayMx();
       const hasta = validDate(a.hasta) ? a.hasta : addDaysIso(desde, 7);
@@ -632,6 +668,7 @@ COTIZACION NUEVA
 - Con cliente y partidas con precio, llama crear_cotizacion. Si responde falta_preguntar, haz esa pregunta UNA vez y al contestar vuelve a llamarla. Para dejar un subtotal exacto o subir margen usa "ajuste". Tras enviar el PDF, cierra con una linea.
 
 EXISTENTES
+- Clientes dados de alta: listar_clientes (listado completo, por texto o por estatus). Cotizaciones: buscar_cotizaciones lista las recientes.
 - Consultar: buscar_cotizaciones / ver_cotizacion ("la ultima de Kelly" = buscar con "Kelly", primera).
 - Modificar (precios, cantidades, partidas, alcance, ajuste): editar_cotizacion NO aplica; muestra el antes/despues corto y pide "si"; con el si, confirmar_accion; con no, cancelar_accion.
 - Estatus: cambiar_estatus (con confirmacion). Copiar a otro cliente: duplicar_cotizacion. Reenviar PDF: enviar_pdf. Resumenes/seguimiento: resumen_ventas.
@@ -694,7 +731,7 @@ export const tryFastPath = async (ctx: AgentCtx): Promise<string | null> => {
   const { state } = ctx;
 
   if (/^\s*[¿]?(ayuda|help|men[uú]|comandos|qu[eé] puedes hacer)\s*[?!]*\s*$/i.test(text)) {
-    return `Soy Nova, la asistente de TecnoPatch. Puedo:\n- Crear cotizaciones: dime cliente y partidas con precio sin IVA (acepto texto, audios, fotos y PDFs)\n- Duplicar una cotización para otro cliente\n- Editar precios, partidas, alcance o notas (te pido confirmación)\n- Dejar una cotización en un subtotal exacto o subirle un porcentaje\n- Cambiar el estatus y reenviar PDFs\n- Consultar cotizaciones y darte un resumen de ventas\n- Agenda del CRM: agendar visitas y citas, ver tu agenda, reagendar o cancelar (ej: \"agenda a Kelly visita mañana 10am\")\n\nEscribe "cancela" para descartar un borrador.`;
+    return `Soy Nova, la asistente de TecnoPatch. Puedo:\n- Crear cotizaciones: dime cliente y partidas con precio sin IVA (acepto texto, audios, fotos y PDFs)\n- Duplicar una cotización para otro cliente\n- Editar precios, partidas, alcance o notas (te pido confirmación)\n- Dejar una cotización en un subtotal exacto o subirle un porcentaje\n- Cambiar el estatus y reenviar PDFs\n- Consultar cotizaciones, listar los clientes del CRM y darte un resumen de ventas\n- Agenda del CRM: agendar visitas y citas, ver tu agenda, reagendar o cancelar (ej: \"agenda a Kelly visita mañana 10am\")\n\nEscribe "cancela" para descartar un borrador.`;
   }
 
   if (state.pending && Date.now() - state.pending.at < 30 * 60 * 1000 && state.pending.msgId !== ctx.messageId) {

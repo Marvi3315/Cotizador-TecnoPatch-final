@@ -331,6 +331,12 @@ export default async function handler(req: any, res: any) {
       sendPdf: async (buffer: Buffer, filename: string, caption: string) => {
         const mediaId = await uploadWhatsAppMedia(buffer, filename);
         await sendWhatsAppDocument(from, mediaId, filename, caption);
+      },
+      // Avisa al resto del equipo (WHATSAPP_NOTIFY_NUMBERS; si no existe, usa WHATSAPP_ALLOWED_NUMBERS)
+      notify: async (text: string) => {
+        const list = (process.env.WHATSAPP_NOTIFY_NUMBERS || process.env.WHATSAPP_ALLOWED_NUMBERS || '').split(',').map(normalizePhone).filter(Boolean);
+        const others = list.filter(n => n !== normalizePhone(from));
+        await Promise.all(others.map(n => sendWhatsAppText(n, text).catch(e => console.error('aviso fallo para', n, e))));
       }
     };
 
