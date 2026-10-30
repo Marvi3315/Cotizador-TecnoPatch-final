@@ -29,6 +29,41 @@ const readRawBody = (req: any): Promise<string> =>
 
 const normalizePhone = (n: string) => String(n || '').replace(/\D/g, '').replace(/^521/, '52');
 
+
+// Cerrojo por vendedor: si llegan dos mensajes casi juntos, se procesan en orden (evita pisar el borrador)
+const acquireLock = async (db: any, key: string, owner: string, waitMs: number): Promise<boolean> => {
+  const ref = db.collection('whatsappLocks').doc(key);
+  const until = Date.now() + waitMs;
+  while (Date.now() < until) {
+    try {
+      const got = await db.runTransaction(async (t: any) => {
+        const snap = await t.get(ref);
+        const lock = snap.exists ? snap.data() : null;
+        if (!lock || Number(lock.until) < Date.now() || lock.owner === owner) {
+          t.set(ref, { owner, until: Date.now() + 55000 });
+          return true;
+        }
+        return false;
+      });
+      if (got) return true;
+    } catch (e) {
+      console.error('cerrojo fallo:', e);
+      return false;
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return false;
+};
+const releaseLock = async (db: any, key: string, owner: string) => {
+  try {
+    const ref = db.collection('whatsappLocks').doc(key);
+    await db.runTransaction(async (t: any) => {
+      const snap = await t.get(ref);
+      if (snap.exists && snap.data()?.owner === owner) t.set(ref, { owner: '', until: 0 });
+    });
+  } catch (e) { console.error('liberar cerrojo fallo:', e); }
+};
+
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 const DRAFT_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -131,6 +166,8 @@ export default async function handler(req: any, res: any) {
   }
 
   const startedAt = Date.now();
+  let dedupeRef: any = null;
+  let lockInfo: { db: any; key: string; owner: string } | null = null;
   try {
     // Cuerpo: crudo si el parser esta desactivado; si Vercel ya lo parseo, se usa tal cual
     let body: any = req.body;
@@ -175,12 +212,16 @@ export default async function handler(req: any, res: any) {
     const messageId = message.id as string;
     const db = getAdminDb();
 
-    // Deduplicacion de reintentos de Meta
-    const dedupeRef = db.collection('whatsappProcessedMessages').doc(messageId);
-    if ((await dedupeRef.get()).exists) {
-      return res.status(200).json({ ok: true, duplicate: true });
+    // Deduplicacion de reintentos de Meta (dos fases: si una ejecucion muere a la mitad, el reintento si se procesa)
+    dedupeRef = db.collection('whatsappProcessedMessages').doc(messageId);
+    const dedupeSnap = await dedupeRef.get();
+    if (dedupeSnap.exists) {
+      const d: any = dedupeSnap.data() || {};
+      if (d.status === 'done' || d.status === undefined || Date.now() - (Number(d.processedAt) || 0) < 90000) {
+        return res.status(200).json({ ok: true, duplicate: true });
+      }
     }
-    await dedupeRef.set({ processedAt: Date.now() });
+    await dedupeRef.set({ processedAt: Date.now(), status: 'processing' });
 
     const supported = ['text', 'audio', 'image', 'document'];
     if (!supported.includes(message.type)) {
@@ -256,6 +297,11 @@ export default async function handler(req: any, res: any) {
 
     const senderName = value?.contacts?.[0]?.profile?.name || from;
 
+    // Cerrojo por vendedor (espera hasta 20 s a que termine su mensaje anterior)
+    const gotLock = await acquireLock(db, from, messageId, 20000);
+    if (gotLock) lockInfo = { db, key: from, owner: messageId };
+    else console.warn('whatsapp-webhook: sin cerrojo para', from, '- se procesa de todos modos');
+
     // Sesion: historial + estado del agente (borrador, pendiente de confirmacion)
     const sessionRef = db.collection('whatsappSessions').doc(from);
     const sessionSnap = await sessionRef.get();
@@ -268,7 +314,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const saveSession = async (extra: ChatMessage[]) => {
-      await sessionRef.set({ messages: [...priorMessages, ...extra].slice(-30), state, updatedAt: Date.now() });
+      await sessionRef.set({ messages: [...priorMessages, ...extra].slice(-30), state, updatedAt: Date.now() }, { merge: true });
     };
 
     // Comando rapido para empezar de cero
@@ -304,7 +350,9 @@ export default async function handler(req: any, res: any) {
     } catch (err: any) {
       console.error('Error en el agente:', err);
       try { await db.collection('whatsappErrors').add({ at: Date.now(), from, userText: userText.slice(0, 300), error: String(err?.message || err).slice(0, 800) }); } catch { /* ignorar */ }
-      reply = `Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo.\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 420)})`;
+      const adminNums = (process.env.WHATSAPP_ADMIN_NUMBERS || '').split(',').map(normalizePhone).filter(Boolean);
+      const showDetail = adminNums.length === 0 || adminNums.includes(from);
+      reply = `Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo.${showDetail ? `\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 420)})` : ''}`;
     }
 
     await sendWhatsAppText(from, reply);
@@ -313,5 +361,8 @@ export default async function handler(req: any, res: any) {
   } catch (error: any) {
     console.error('whatsapp-webhook error:', error);
     return res.status(200).json({ ok: false, error: error.message || 'Error inesperado' });
+  } finally {
+    if (lockInfo) await releaseLock(lockInfo.db, lockInfo.key, lockInfo.owner);
+    if (dedupeRef) { try { await dedupeRef.set({ status: 'done', finishedAt: Date.now() }, { merge: true }); } catch { /* ignorar */ } }
   }
 }

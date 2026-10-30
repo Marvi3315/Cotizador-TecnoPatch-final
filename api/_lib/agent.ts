@@ -1,4 +1,4 @@
-import { getNextQuoteNumber } from './quoteNumber.js';
+import { reserveQuoteNumber } from './quoteNumber.js';
 import { buildQuotePdfBuffer } from './quotePdf.js';
 
 // =====================================================================
@@ -31,6 +31,7 @@ export type AgentCtx = {
   sendPdf: (buffer: Buffer, filename: string, caption: string) => Promise<void>;
 };
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const STATUSES = ['Borrador', 'Enviada', 'Seguimiento', 'Aceptada', 'Rechazada'];
 const IVA = 0.16;
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -174,7 +175,7 @@ const createQuoteFrom = async (
   origin: string
 ) => {
   const totals = totalsOf(items, true);
-  const quoteNumber = await getNextQuoteNumber(ctx.db);
+  const quoteNumber = await reserveQuoteNumber(ctx.db);
   const ref = ctx.db.collection('quoteHistory').doc();
   const date = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
   const doc = {
@@ -593,7 +594,15 @@ export const runAgent = async (clients: { groq: any; gemini?: any }, ctx: AgentC
     if (deadline - Date.now() < 5000) {
       return sentPdfFlag ? 'Listo, ahi te lo mande.' : 'Me estoy tardando de mas con eso. Lo que ya me diste quedo guardado: mandame un "listo" y sigo.';
     }
-    const { res, modelIndex: used } = await chatWithFallback(clients, messages, selectedTools, modelIndex, deadline);
+    let result: { res: any; modelIndex: number };
+    try {
+      result = await chatWithFallback(clients, messages, selectedTools, modelIndex, deadline);
+    } catch (e) {
+      // un segundo intento completo tras una pausa corta (fallas transitorias o limite por minuto)
+      if (deadline - Date.now() > 14000) { await sleep(2500); result = await chatWithFallback(clients, messages, selectedTools, 0, deadline); }
+      else throw e;
+    }
+    const { res, modelIndex: used } = result;
     modelIndex = used;
     const msg = res.choices?.[0]?.message;
     const calls = msg?.tool_calls || [];
