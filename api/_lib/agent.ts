@@ -269,13 +269,18 @@ const AGENDA_RE = /\bcitas?\b|agend|reagend|reunion|junta|visita|calendario|que 
 const CORE_TOOLS = ['actualizar_borrador', 'crear_cotizacion', 'buscar_clientes', 'listar_clientes'];
 const EXISTING_RE = /cot-\d|folio|historial|ultim|anterior|cambia|modifica|edita|duplic|copia|estatus|aceptad|rechazad|seguimiento|resumen|cuanto|cuantas|reenv|manda(me)? (la|el|esa|ese)|pdf|esa cotizacion|la de /i;
 // Solo se mandan al modelo las herramientas que la peticion probablemente necesita
-export const selectTools = (userText: string, state: AgentState): any[] => {
-  const t = userText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+export const selectTools = (userText: string, state: AgentState, recentText = ''): any[] => {
+  const clean = (x: string) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const t = clean(userText);
+  const ctxText = `${clean(recentText)} ${t}`;
   if (state.pending) return TOOLS;
-  if (AGENDA_RE.test(t) && !/cot-\d|cotizacion|cotiza /.test(t)) return TOOLS.filter(x => AGENDA_TOOLS.includes(x.function.name));
+  const quoteWords = /cot-\d|cotizacion|cotiza |partida|subtotal|iva/;
+  // Conversacion de agenda en curso (aunque este mensaje solo diga "Kelly, 1 pm, direccion X")
+  if (AGENDA_RE.test(ctxText) && !quoteWords.test(t) && !state.draft.items.length) return TOOLS.filter(x => AGENDA_TOOLS.includes(x.function.name));
   if (EXISTING_RE.test(t)) return TOOLS;
   const looksLikeNewQuote = /\$|\d/.test(t) || state.draft.items.length > 0 || /cotiza/.test(t);
-  return looksLikeNewQuote ? TOOLS.filter(x => CORE_TOOLS.includes(x.function.name)) : TOOLS;
+  // Un mensaje con numeros puede ser una cita (hora, direccion): la agenda siempre viaja con el nucleo de cotizar
+  return looksLikeNewQuote ? TOOLS.filter(x => CORE_TOOLS.includes(x.function.name) || AGENDA_TOOLS.includes(x.function.name)) : TOOLS;
 };
 
 type Mutation = { error: string } | { preview: any; commit: () => Promise<any> };
@@ -676,7 +681,7 @@ EXISTENTES
 
 AGENDA (CRM compartido)
 - Puedes consultar y agendar citas/visitas: ver_agenda, agendar_cita, modificar_cita. Convierte "manana", "el jueves", "a las 4" a fecha YYYY-MM-DD y hora 24h usando la fecha de hoy. "Proximo jueves" = el jueves que sigue a hoy.
-- Para agendar necesitas cliente, dia y hora. Si dan todo en un mensaje, agenda de inmediato. Si falta algo (o solo dicen "ayudame a agendar una cita"), pregunta TODO lo que falta en UN solo mensaje corto, no campo por campo (ej: "Va. Con quien, que dia y a que hora? Si quieres dime tambien el lugar o el motivo"). Lugar y motivo son opcionales, no los exijas. Tipo por defecto: Visita tecnica. Agendar no pide confirmacion (di el resultado); reagendar/cancelar con modificar_cita si pide "si".
+- Para agendar necesitas cliente, dia y hora. Si dan todo en un mensaje, agenda de inmediato. Si falta algo (o solo dicen "ayudame a agendar una cita"), pregunta TODO lo que falta en UN solo mensaje corto, no campo por campo (ej: "Va. Con quien, que dia y a que hora? Si quieres dime tambien el lugar o el motivo"). Lugar y motivo son opcionales, no los exijas. Si el vendedor responde con datos sueltos ("Kelly, 1 pm, direccion Platano 1531"), es la respuesta a tu pregunta: junta con lo que ya dijo (ej. "manana") y llama agendar_cita; la direccion va en lugar. Tipo por defecto: Visita tecnica. Agendar no pide confirmacion (di el resultado); reagendar/cancelar con modificar_cita si pide "si".
 - Si agendar_cita avisa choque, preguntalo. Si el cliente no existe, se crea como Prospecto y lo mencionas.
 
 IMAGENES/PDFS llegan como texto entre corchetes: extrae partidas y arma el borrador. No copies m2 salvo que lo pidan. Si los precios ya traen IVA, pregunta.
@@ -691,23 +696,27 @@ ${state.pending ? `PENDIENTE DE CONFIRMAR: ${state.pending.tool} ${JSON.stringif
 // Loop del agente con fallback de modelos, limite de tiempo y sin esperas largas
 // ---------------------------------------------------------------------
 type Msg = { role: 'user' | 'assistant'; content: string };
+// Groq retiro llama-3.3-70b (ago 2026) y llama-4-scout (jul 2026). Si cambian modelos otra vez, se puede
+// sobreescribir sin tocar codigo con la variable GROQ_MODELS (ids separados por coma, el primero es el principal).
+const defaultGroqModels = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b'];
+const groqModels = (process.env.GROQ_MODELS || '').split(',').map(x => x.trim()).filter(Boolean);
 const MODEL_CHAIN: Array<{ provider: 'groq' | 'gemini'; model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
-  { provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' },
-  { provider: 'groq', model: 'llama-3.3-70b-versatile' },
-  { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct' },
-  { provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' },
+  ...(groqModels.length ? groqModels : defaultGroqModels).map(model => ({ provider: 'groq' as const, model, reasoning: /gpt-oss/.test(model) ? ('low' as const) : undefined })),
   { provider: 'gemini', model: 'gemini-3.6-flash' } // respaldo: si Groq esta sin cuota o caido
 ];
+const deadModels = new Set<string>(); // modelos que respondieron 404 (retirados): no se vuelven a intentar en esta instancia
 
 // Prueba cada modelo UNA vez (si hay limite de tokens o falla, pasa de inmediato al siguiente).
 const chatWithFallback = async (clients: { groq: any; gemini?: any }, messages: any[], tools: any[], startAt: number, deadline: number) => {
   const errors: string[] = [];
+  let widened = false;
   for (let m = startAt; m < MODEL_CHAIN.length; m++) {
     const remaining = deadline - Date.now();
     if (remaining < 4000) { errors.push('sin tiempo'); break; }
     const { provider, model, reasoning } = MODEL_CHAIN[m];
     const client = clients[provider];
     if (!client) continue; // proveedor no configurado
+    if (deadModels.has(model)) continue;
     try {
       const params: any = { model, messages, tools, tool_choice: 'auto', temperature: 0.2 };
       if (reasoning) params.reasoning_effort = reasoning;
@@ -717,6 +726,11 @@ const chatWithFallback = async (clients: { groq: any; gemini?: any }, messages: 
       const rawMsg = String((Array.isArray(err?.error) ? err.error[0]?.error?.message : err?.error?.error?.message) || err?.message || err).replace(/\s+/g, ' ');
       const detail = err?.status === 429 ? (/per day|TPD/i.test(rawMsg) ? 'limite diario' : 'limite por minuto') : rawMsg.slice(0, 100);
       console.error(`LLM fallo (${model}) status=${err?.status}:`, detail);
+      if (err?.status === 404) deadModels.add(model);
+      // El modelo quiso usar una herramienta que no le mandamos (o argumentos invalidos): reintenta con TODAS las herramientas
+      if (err?.status === 400 && /tool call validation|not in request\.tools|tool_use_failed|failed to call a function/i.test(rawMsg) && !widened) {
+        widened = true; tools = TOOLS; m--; continue;
+      }
       errors.push(`${model.split('/').pop()}: ${err?.status || 'sin respuesta'} ${detail}`);
     }
   }
@@ -764,7 +778,8 @@ export const runAgent = async (clients: { groq: any; gemini?: any }, ctx: AgentC
     ...history.map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: ctx.userText }
   ];
-  const selectedTools = selectTools(ctx.userText, ctx.state);
+  const recent = history.slice(-3).map(m => m.content).join(' ').slice(-600);
+  const selectedTools = selectTools(ctx.userText, ctx.state, recent);
   let modelIndex = 0;
   let sentPdfFlag = false;
   const origSend = ctx.sendPdf;

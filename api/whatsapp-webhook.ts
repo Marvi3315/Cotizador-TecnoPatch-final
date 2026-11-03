@@ -94,7 +94,8 @@ const transcribeAudio = async (buffer: Buffer, mimeType: string): Promise<string
 
 // Analiza una imagen (foto, screenshot, lista escrita). Prueba varios modelos de vision en orden:
 // si uno esta caido, retirado o sin cuota, pasa al siguiente (Groq y al final Gemini).
-const VISION_MODELS = ['meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3.6-27b'];
+// (llama-4-scout y qwen3.6 ya fueron retirados por Groq; se puede cambiar con GROQ_VISION_MODELS sin tocar codigo)
+const VISION_MODELS = (process.env.GROQ_VISION_MODELS || 'qwen/qwen3.8-27b').split(',').map(x => x.trim()).filter(Boolean);
 
 const analyzeImage = async (buffer: Buffer, mimeType: string, caption?: string): Promise<string> => {
   const safeMime = /^image\/(jpeg|png|webp|gif)$/.test(mimeType) ? mimeType : 'image/jpeg';
@@ -357,8 +358,8 @@ export default async function handler(req: any, res: any) {
       console.error('Error en el agente:', err);
       try { await db.collection('whatsappErrors').add({ at: Date.now(), from, userText: userText.slice(0, 300), error: String(err?.message || err).slice(0, 800) }); } catch { /* ignorar */ }
       const adminNums = (process.env.WHATSAPP_ADMIN_NUMBERS || '').split(',').map(normalizePhone).filter(Boolean);
-      const showDetail = adminNums.length === 0 || adminNums.includes(from);
-      reply = `Se me trabo un momento el cerebro. Lo que me dijiste quedo guardado: mandame un "listo" o repite lo ultimo y sigo.${showDetail ? `\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 420)})` : ''}`;
+      const showDetail = adminNums.includes(from); // solo admins ven el detalle tecnico; el resto ve un mensaje limpio (el detalle queda en whatsappErrors)
+      reply = `Tuve un tropiezo, pero lo que me dijiste quedo guardado. Mandame un "listo" o repite lo ultimo y sigo.${showDetail ? `\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 420)})` : ''}`;
     }
 
     await sendWhatsAppText(from, reply);
