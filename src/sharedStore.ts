@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocFromServer,
   limit,
   onSnapshot,
@@ -14,7 +15,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from './firebase';
-import type { ClientInventoryLog, ClientInventoryRecord, ClientRecord, MeetingRecord, QuoteHistoryItem } from './types';
+import type { ClientDocumentMeta, ClientFiscal, ClientInventoryLog, ClientInventoryRecord, ClientRecord, InvoiceRecord, MeetingRecord, QuoteHistoryItem } from './types';
 
 const cleanForFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
@@ -185,4 +186,89 @@ export async function saveSharedInventoryLog(log: ClientInventoryLog) {
   const database = requireDb();
   const logRef = doc(database, 'clientInventoryLogs', log.id);
   await setDoc(logRef, cleanForFirestore(log));
+}
+
+
+// ---------------- Datos fiscales / documentos / facturas ----------------
+export async function getClientFiscal(clientId: string): Promise<ClientFiscal | null> {
+  const database = requireDb();
+  const snap = await getDoc(doc(database, 'clientFiscal', clientId));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as ClientFiscal) : null;
+}
+
+export async function saveClientFiscal(fiscal: ClientFiscal) {
+  const database = requireDb();
+  const ref = doc(database, 'clientFiscal', fiscal.id);
+  await setDoc(ref, cleanForFirestore(fiscal));
+  await confirmWrite(ref, 'los datos fiscales');
+}
+
+export function subscribeToAllClientFiscal(onData: (rows: ClientFiscal[]) => void, onError: (error: Error) => void): Unsubscribe {
+  const database = requireDb();
+  return onSnapshot(
+    collection(database, 'clientFiscal'),
+    snapshot => onData(snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as ClientFiscal)),
+    error => onError(error)
+  );
+}
+
+export function subscribeToClientDocuments(clientId: string, onData: (docs: ClientDocumentMeta[]) => void, onError: (error: Error) => void): Unsubscribe {
+  const database = requireDb();
+  return onSnapshot(
+    query(collection(database, 'clientDocuments'), where('clientId', '==', clientId || '__none__'), limit(100)),
+    snapshot => onData(
+      snapshot.docs
+        .map(item => ({ id: item.id, ...item.data() }) as ClientDocumentMeta)
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
+    ),
+    error => onError(error)
+  );
+}
+
+// El archivo vive en un documento aparte para que la lista sea ligera (limite de Firestore: 1 MB por documento)
+export async function saveClientDocument(meta: ClientDocumentMeta, dataBase64: string) {
+  const database = requireDb();
+  const fileRef = doc(database, 'clientDocumentFiles', meta.id);
+  await setDoc(fileRef, { clientId: meta.clientId, mime: meta.mime, dataBase64 });
+  await confirmWrite(fileRef, 'el archivo');
+  const metaRef = doc(database, 'clientDocuments', meta.id);
+  await setDoc(metaRef, cleanForFirestore(meta));
+  await confirmWrite(metaRef, 'el documento');
+}
+
+export async function getClientDocumentData(id: string): Promise<{ mime: string; dataBase64: string } | null> {
+  const database = requireDb();
+  const snap = await getDoc(doc(database, 'clientDocumentFiles', id));
+  return snap.exists() ? (snap.data() as { mime: string; dataBase64: string }) : null;
+}
+
+export async function deleteClientDocument(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, 'clientDocumentFiles', id));
+  await deleteDoc(doc(database, 'clientDocuments', id));
+}
+
+export function subscribeToInvoices(onData: (rows: InvoiceRecord[]) => void, onError: (error: Error) => void): Unsubscribe {
+  const database = requireDb();
+  return onSnapshot(
+    query(collection(database, 'invoices'), limit(1000)),
+    snapshot => onData(
+      snapshot.docs
+        .map(item => ({ id: item.id, ...item.data() }) as InvoiceRecord)
+        .sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''))
+    ),
+    error => onError(error)
+  );
+}
+
+export async function saveInvoice(invoice: InvoiceRecord) {
+  const database = requireDb();
+  const ref = doc(database, 'invoices', invoice.id);
+  await setDoc(ref, cleanForFirestore(invoice));
+  await confirmWrite(ref, 'la factura');
+}
+
+export async function deleteInvoice(id: string) {
+  const database = requireDb();
+  await deleteDoc(doc(database, 'invoices', id));
 }

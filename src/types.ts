@@ -161,3 +161,61 @@ export interface ClientInventoryLog {
   userEmail: string;
   createdAt: string;
 }
+
+// ---- Datos fiscales, documentos y facturas por cliente ----
+export interface ClientFiscal {
+  id: string; // = id del cliente
+  rfc: string;
+  razonSocial: string;
+  regimenFiscal: string;
+  codigoPostal: string;
+  usoCfdi: string;
+  formaPago: string;
+  metodoPago: string;
+  emailsFactura: string;
+  apNombre: string;
+  apEmail: string;
+  apTelefono: string;
+  diasCredito: number;
+  limiteCredito: number;
+  requiereOrdenCompra: boolean;
+  portalProveedores: string;
+  notasFacturacion: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface ClientDocumentMeta {
+  id: string;
+  clientId: string;
+  kind: string;
+  name: string;
+  mime: string;
+  size: number;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
+export type InvoiceStatus = 'Emitida' | 'Enviada' | 'Parcial' | 'Pagada' | 'Cancelada';
+
+export interface InvoiceRecord {
+  id: string;
+  folio: string;
+  uuid: string;
+  clientId: string;
+  clientName: string;
+  quoteNumber: string;
+  orderNumber: string;
+  issueDate: string;
+  dueDate: string;
+  subtotal: number;
+  total: number;
+  paidAmount: number;
+  paidDate: string;
+  status: InvoiceStatus;
+  paymentComplement: boolean;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}

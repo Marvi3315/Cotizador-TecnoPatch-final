@@ -14,6 +14,8 @@ import { toast, Toaster } from 'sonner';
 import { auth, authReady, firebaseReady } from './firebase';
 import { createUserByAdmin, getOrCreateUserProfile, loginWithEmail, logoutUser, saveUserProfile, subscribeToUsers } from './authStore';
 import { QuoteDocument } from './components/QuoteDocument';
+import { ClientFiscalDialog } from './components/ClientFiscalDialog';
+import { InvoicesModule } from './components/InvoicesModule';
 import { calculateMargin, calculateSubtotal as getQuoteSubtotal, calculateTotalCostDisplay as getTotalCostDisplay, formatSyscomPrice } from './pricing';
 import {
   deleteSharedClient,
@@ -170,7 +172,7 @@ export default function App() {
   const [manualUnit, setManualUnit] = useState('pz');
   const [manualQuantity, setManualQuantity] = useState(1);
   const [manualUnitPrice, setManualUnitPrice] = useState(0);
-  const [activeModule, setActiveModule] = useState<'inicio' | 'cotizador' | 'clientes' | 'citas' | 'seguimiento' | 'inventario' | 'usuarios'>('inicio');
+  const [activeModule, setActiveModule] = useState<'inicio' | 'cotizador' | 'clientes' | 'citas' | 'seguimiento' | 'facturas' | 'inventario' | 'usuarios'>('inicio');
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [inventoryRecords, setInventoryRecords] = useState<ClientInventoryRecord[]>([]);
@@ -199,6 +201,7 @@ export default function App() {
   const [lostReason, setLostReason] = useState('');
   const [globalCrmSearch, setGlobalCrmSearch] = useState('');
   const [editingClientId, setEditingClientId] = useState('');
+  const [fiscalClient, setFiscalClient] = useState<ClientRecord | null>(null);
   const [editingMeetingId, setEditingMeetingId] = useState('');
   const [newClient, setNewClient] = useState({
     name: '',
@@ -344,6 +347,7 @@ export default function App() {
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'citas', label: 'Citas', icon: CalendarDays },
     { id: 'seguimiento', label: 'Seguimiento', icon: ClipboardList },
+    ...(canManageInventory ? [{ id: 'facturas' as const, label: 'Facturas', icon: FileText }] : []),
     { id: 'inventario', label: 'Inventario', icon: KeyRound },
     ...(isAdmin ? [{ id: 'usuarios' as const, label: 'Usuarios', icon: UserPlus }] : [])
   ] as const;
@@ -3334,6 +3338,7 @@ export default function App() {
                           {activeModule === 'clientes' && 'Clientes'}
                           {activeModule === 'citas' && 'Agenda Comercial'}
                           {activeModule === 'seguimiento' && 'Seguimiento de Cotizaciones'}
+                          {activeModule === 'facturas' && 'Seguimiento de Facturas'}
                           {activeModule === 'inventario' && 'Inventario y Accesos'}
                           {activeModule === 'usuarios' && 'Usuarios y Accesos'}
                         </h1>
@@ -3698,6 +3703,9 @@ export default function App() {
                             <div className="flex gap-2">
                               <Button variant="outline" onClick={() => useClientInQuote(client)}>Usar en cotizacion</Button>
                               <Button variant="secondary" onClick={() => { setNewMeeting({ ...newMeeting, clientId: client.id, location: client.address, owner: client.owner }); setActiveModule('citas'); }}>Agendar</Button>
+                              {canManageInventory && (
+                                <Button variant="outline" onClick={() => setFiscalClient(client)} title="Datos fiscales y documentos"><ShieldCheck size={14} className="mr-1" />Fiscal</Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -3723,6 +3731,14 @@ export default function App() {
                       </div>
                     </section>
                   </div>
+                )}
+
+                {activeModule === 'facturas' && canManageInventory && (
+                  <InvoicesModule clients={clients} quotes={quoteHistory} userName={currentUserProfile?.name || currentUserProfile?.email || 'Usuario'} />
+                )}
+
+                {canManageInventory && (
+                  <ClientFiscalDialog client={fiscalClient} open={!!fiscalClient} onOpenChange={o => { if (!o) setFiscalClient(null); }} userName={currentUserProfile?.name || currentUserProfile?.email || 'Usuario'} />
                 )}
 
                 {activeModule === 'citas' && (

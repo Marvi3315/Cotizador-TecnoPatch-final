@@ -58,6 +58,23 @@ service cloud.firestore {
       allow write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
     }
 
+    // Datos fiscales, documentos y facturas: solo admin y ventas (el rol "lectura" no los ve)
+    match /clientFiscal/{doc} {
+      allow read, write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+
+    match /clientDocuments/{doc} {
+      allow read, write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+
+    match /clientDocumentFiles/{doc} {
+      allow read, write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+
+    match /invoices/{doc} {
+      allow read, write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
+    }
+
     match /clientInventory/{doc} {
       allow read: if activeUser();
       allow write: if activeUser() && userProfile().data.role in ['admin', 'ventas'];
