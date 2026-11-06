@@ -299,9 +299,15 @@ export default async function handler(req: any, res: any) {
     const senderName = value?.contacts?.[0]?.profile?.name || from;
 
     // Cerrojo por vendedor (espera hasta 20 s a que termine su mensaje anterior)
-    const gotLock = await acquireLock(db, from, messageId, 20000);
+    const gotLock = await acquireLock(db, from, messageId, 25000);
     if (gotLock) lockInfo = { db, key: from, owner: messageId };
-    else console.warn('whatsapp-webhook: sin cerrojo para', from, '- se procesa de todos modos');
+    else {
+      // El mensaje anterior de este vendedor sigue en proceso: NO se procesa en paralelo (evita cotizaciones duplicadas)
+      console.warn('whatsapp-webhook: sin cerrojo para', from, '- el mensaje anterior sigue en proceso');
+      await sendWhatsAppText(from, 'Sigo terminando tu mensaje anterior, dame un momento. Si en un minuto no te llega, mandame de nuevo lo ultimo.');
+      return res.status(200).json({ ok: true, busy: true });
+    }
+    console.log(`timing ${messageId.slice(-6)}: cerrojo ${Date.now() - startedAt}ms`);
 
     // Sesion: historial + estado del agente (borrador, pendiente de confirmacion)
     const sessionRef = db.collection('whatsappSessions').doc(from);
@@ -362,8 +368,10 @@ export default async function handler(req: any, res: any) {
       reply = `Tuve un tropiezo, pero lo que me dijiste quedo guardado. Mandame un "listo" o repite lo ultimo y sigo.${showDetail ? `\n\n(detalle tecnico: ${String(err?.message || err).slice(0, 420)})` : ''}`;
     }
 
+    console.log(`timing ${messageId.slice(-6)}: agente listo ${Date.now() - startedAt}ms`);
     await sendWhatsAppText(from, reply);
     await saveSession([{ role: 'user', content: userText.slice(0, 3000) }, { role: 'assistant', content: reply }]);
+    console.log(`timing ${messageId.slice(-6)}: total ${Date.now() - startedAt}ms`);
     return res.status(200).json({ ok: true });
   } catch (error: any) {
     console.error('whatsapp-webhook error:', error);
