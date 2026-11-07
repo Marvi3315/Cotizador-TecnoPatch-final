@@ -14,10 +14,6 @@ const groq = new OpenAI({
   maxRetries: 0, // sin reintentos automaticos del SDK: el agente maneja el fallback y el limite de tiempo
 });
 
-// Respaldo: Gemini por su endpoint compatible con OpenAI (solo si hay GEMINI_API_KEY)
-const gemini = process.env.GEMINI_API_KEY
-  ? new OpenAI({ apiKey: process.env.GEMINI_API_KEY, baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/', maxRetries: 0 })
-  : undefined;
 
 const readRawBody = (req: any): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -93,7 +89,7 @@ const transcribeAudio = async (buffer: Buffer, mimeType: string): Promise<string
 };
 
 // Analiza una imagen (foto, screenshot, lista escrita). Prueba varios modelos de vision en orden:
-// si uno esta caido, retirado o sin cuota, pasa al siguiente (Groq y al final Gemini).
+// si uno esta caido, retirado o sin cuota, pasa al siguiente (todos de Groq).
 // (llama-4-scout y qwen3.6 ya fueron retirados por Groq; se puede cambiar con GROQ_VISION_MODELS sin tocar codigo)
 const VISION_MODELS = (process.env.GROQ_VISION_MODELS || 'qwen/qwen3.8-27b').split(',').map(x => x.trim()).filter(Boolean);
 
@@ -127,24 +123,6 @@ Responde solo con la descripcion en texto plano, en español, sin JSON ni markdo
     } catch (err: any) {
       lastError = err;
       console.error(`Vision fallo (${model}) status=${err?.status}:`, err?.message || err);
-    }
-  }
-
-  // Ultimo recurso: Gemini
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: visionPrompt }, { inline_data: { mime_type: safeMime, data: base64 } }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 1800 } })
-      });
-      const data: any = await response.json();
-      if (!response.ok) throw new Error(data?.error?.message || `Gemini status ${response.status}`);
-      const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('')?.trim();
-      if (text) return text;
-    } catch (err: any) {
-      lastError = err;
-      console.error('Vision fallo (Gemini):', err?.message || err);
     }
   }
 
@@ -358,7 +336,7 @@ export default async function handler(req: any, res: any) {
       } else {
         const history = priorMessages.slice(-8).map(m => ({ role: m.role, content: m.content.slice(0, 700) }));
         const deadline = startedAt + 50000; // Vercel corta a los 60 s
-        reply = await runAgent({ groq, gemini }, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
+        reply = await runAgent({ groq }, ctx, history, deadline, () => saveSession([{ role: 'user', content: userText.slice(0, 3000) }]));
       }
     } catch (err: any) {
       console.error('Error en el agente:', err);

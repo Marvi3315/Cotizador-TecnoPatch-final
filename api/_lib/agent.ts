@@ -277,7 +277,8 @@ export const selectTools = (userText: string, state: AgentState, recentText = ''
   const quoteWords = /cot-\d|cotizacion|cotiza |partida|subtotal|iva/;
   // Conversacion de agenda en curso (aunque este mensaje solo diga "Kelly, 1 pm, direccion X")
   if (AGENDA_RE.test(ctxText) && !quoteWords.test(t) && !state.draft.items.length) return TOOLS.filter(x => AGENDA_TOOLS.includes(x.function.name));
-  if (EXISTING_RE.test(t)) return TOOLS;
+  // Editar algo existente: tambien cuando el folio se menciono en los mensajes recientes ("Agregar esta partida ... $19470" no trae folio)
+  if (EXISTING_RE.test(t) || (EXISTING_RE.test(ctxText) && !state.draft.items.length)) return TOOLS;
   const looksLikeNewQuote = /\$|\d/.test(t) || state.draft.items.length > 0 || /cotiza/.test(t);
   // Un mensaje con numeros puede ser una cita (hora, direccion): la agenda siempre viaja con el nucleo de cotizar
   return looksLikeNewQuote ? TOOLS.filter(x => CORE_TOOLS.includes(x.function.name) || AGENDA_TOOLS.includes(x.function.name)) : TOOLS;
@@ -675,6 +676,7 @@ COTIZACION NUEVA
 EXISTENTES
 - Clientes dados de alta: listar_clientes (listado completo, por texto o por estatus). Cotizaciones: buscar_cotizaciones lista las recientes.
 - Consultar: buscar_cotizaciones / ver_cotizacion ("la ultima de Kelly" = buscar con "Kelly", primera).
+- Agregar una partida a una cotizacion existente se hace con editar_cotizacion (campo agregar); NUNCA propongas crear otra cotizacion ni duplicar para eso. Sin asteriscos ni negritas.
 - Modificar (precios, cantidades, partidas, alcance, ajuste): editar_cotizacion NO aplica; muestra el antes/despues corto y pide "si"; con el si, confirmar_accion; con no, cancelar_accion.
 - Estatus: cambiar_estatus (con confirmacion). Copiar a otro cliente: duplicar_cotizacion. Reenviar PDF: enviar_pdf. Resumenes/seguimiento: resumen_ventas.
 - "esa/la primera": saca el folio de lo hablado; si hay duda, pregunta.
@@ -700,14 +702,13 @@ type Msg = { role: 'user' | 'assistant'; content: string };
 // sobreescribir sin tocar codigo con la variable GROQ_MODELS (ids separados por coma, el primero es el principal).
 const defaultGroqModels = ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b'];
 const groqModels = (process.env.GROQ_MODELS || '').split(',').map(x => x.trim()).filter(Boolean);
-const MODEL_CHAIN: Array<{ provider: 'groq' | 'gemini'; model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
-  ...(groqModels.length ? groqModels : defaultGroqModels).map(model => ({ provider: 'groq' as const, model, reasoning: /gpt-oss/.test(model) ? ('low' as const) : undefined })),
-  { provider: 'gemini', model: 'gemini-3.6-flash' } // respaldo: si Groq esta sin cuota o caido
+const MODEL_CHAIN: Array<{ provider: 'groq'; model: string; reasoning?: 'low' | 'medium' | 'high' }> = [
+  ...(groqModels.length ? groqModels : defaultGroqModels).map(model => ({ provider: 'groq' as const, model, reasoning: /gpt-oss/.test(model) ? ('low' as const) : undefined }))
 ];
 const deadModels = new Set<string>(); // modelos que respondieron 404 (retirados): no se vuelven a intentar en esta instancia
 
 // Prueba cada modelo UNA vez (si hay limite de tokens o falla, pasa de inmediato al siguiente).
-const chatWithFallback = async (clients: { groq: any; gemini?: any }, messages: any[], tools: any[], startAt: number, deadline: number) => {
+const chatWithFallback = async (clients: { groq: any }, messages: any[], tools: any[], startAt: number, deadline: number) => {
   const errors: string[] = [];
   let widened = false;
   for (let m = startAt; m < MODEL_CHAIN.length; m++) {
@@ -772,7 +773,7 @@ export const tryFastPath = async (ctx: AgentCtx): Promise<string | null> => {
   return null;
 };
 
-export const runAgent = async (clients: { groq: any; gemini?: any }, ctx: AgentCtx, history: Msg[], deadline: number, persist?: () => Promise<void>): Promise<string> => {
+export const runAgent = async (clients: { groq: any }, ctx: AgentCtx, history: Msg[], deadline: number, persist?: () => Promise<void>): Promise<string> => {
   const messages: any[] = [
     { role: 'system', content: buildSystemPrompt(ctx.state, ctx.senderName) },
     ...history.map(m => ({ role: m.role, content: m.content })),
